@@ -1,0 +1,14 @@
+#产生报警规则
+
+
+groups:
+  - name: training-alerts
+    rules:
+      - alert: TrainingExporterDown
+        expr: up{job="training"} == 0
+        for: 15s
+        labels:
+          severity: warning
+        annotations:
+          summary: "Training metrics endpoint is down"
+          description: "Prometheus cannot scrape the training process on port 8000 for 15 seconds"

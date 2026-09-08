@@ -1,0 +1,4 @@
+checkpoint_demo/checkpoint.pt
+checkpoint_demo/checkpoint.pt.tmp
+**/__pycache__/
+*.pyc
