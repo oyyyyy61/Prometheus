@@ -24,6 +24,11 @@ recovery_starts_total = Counter(
     "Number of training processes started by recovery controller",
 )
 
+recovery_success_total = Counter(
+    "recovery_success_total",
+    "Number of training recoveries verified by Alertmanager resolved events",
+)
+
 
 PROMETHEUS_QUERY_URL = "http://127.0.0.1:9090/api/v1/query"
 
@@ -69,7 +74,6 @@ def start_training():
         cwd=TRAINING_DIR,
     )
     recovery_starts_total.inc()
-    print("Metrics endpoint: http://127.0.0.1:9001/metrics")
     print(f"Training process started, pid={training_process.pid}")
 
 
@@ -114,6 +118,7 @@ class AlertHandler(BaseHTTPRequestHandler):
                 labels = alert.get("labels", {})
 
                 if labels.get("alertname") == "TrainingExporterDown":
+                    recovery_success_total.inc()
                     print("Training recovery verified")
                     print("Prometheus can scrape the training process again")
                     break
@@ -128,12 +133,19 @@ class AlertHandler(BaseHTTPRequestHandler):
 
 server = HTTPServer(("0.0.0.0", 9000), AlertHandler)
 
+start_http_server(9001)
+
 print("Recovery controller listening on port 9000")
 print("Health endpoint: http://127.0.0.1:9000/healthz")
 print("Webhook endpoint: http://127.0.0.1:9000/alert")
+print("Metrics endpoint: http://127.0.0.1:9001/metrics")
+
 training_is_up = get_training_status()
 print("Prometheus reports training up =", training_is_up)
 
+if training_is_up is False:
+    print("Training is down at controller startup; starting recovery")
+    start_training()
 
 try:
     server.serve_forever()
