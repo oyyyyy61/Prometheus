@@ -4,7 +4,7 @@ from urllib.error import URLError
 from urllib.parse import urlencode
 from urllib.request import urlopen
 
-
+import shutil
 import subprocess
 import sys
 from pathlib import Path
@@ -16,6 +16,16 @@ from prometheus_client import Counter, start_http_server
 
 TRAINING_DIR = Path(r"E:\codex\Prometheus\checkpoint_demo")
 TRAINING_SCRIPT = TRAINING_DIR / "auto_resume.py"
+
+
+#节点切换，当node-a训练停止时，controller会切换到node-b继续训练
+NODE_DIRS = {
+    "node-a": TRAINING_DIR,
+    "node-b": Path(r"E:\codex\Prometheus\migration_demo\node_b"),
+}
+
+CHECKPOINT_NAME = "auto_checkpoint.pt"
+active_node = "node-a"
 
 training_process = None
 
@@ -32,7 +42,7 @@ recovery_success_total = Counter(
 
 PROMETHEUS_QUERY_URL = "http://127.0.0.1:9090/api/v1/query"
 
-
+#得到训练进程的状态，返回 True 表示训练进程正在运行，False 表示训练进程已经停止
 def get_training_status():
 
     #把 up{job="training"} 转换成可放进 URL 的格式
@@ -61,20 +71,66 @@ def get_training_status():
     value = float(results[0]["value"][1])
     return value == 1.0
 
+#找到训练进程的 checkpoint 文件，并复制到另一个节点
+def copy_checkpoint(source_node, target_node):
+    if source_node not in NODE_DIRS:
+        print(f"Unknown source node: {source_node}")
+        return False
 
-def start_training():
-    global training_process
+    if target_node not in NODE_DIRS:
+        print(f"Unknown target node: {target_node}")
+        return False
 
+    source_path = NODE_DIRS[source_node] / CHECKPOINT_NAME
+    target_path = NODE_DIRS[target_node] / CHECKPOINT_NAME
+    temporary_path = target_path.with_suffix(target_path.suffix + ".tmp")
+
+    if not source_path.exists():
+        print(f"Checkpoint not found: {source_path}")
+        return False
+
+    shutil.copy2(source_path, temporary_path)
+    temporary_path.replace(target_path)
+
+    print(f"Checkpoint copied from {source_node} to {target_node}")
+    return True
+
+#开始训练进程
+def start_training(node_name=None):
+    global training_process, active_node
+
+    if node_name is None:
+        node_name = active_node
+
+    #判断当前node是否在已知节点列表中
+    if node_name not in NODE_DIRS:
+        print(f"Unknown node: {node_name}")
+        return
+    #判断训练进程是否已经在运行
     if training_process is not None and training_process.poll() is None:
         print("Training process is already running")
         return
 
+    node_dir = NODE_DIRS[node_name]
+    #筛选节点训练脚本路径
+    training_script = node_dir / "auto_resume.py"
+
+    if not training_script.exists():
+        print(f"Training script not found: {training_script}")
+        return
+
+    #启动训练进程
     training_process = subprocess.Popen(
-        [sys.executable, str(TRAINING_SCRIPT)],
-        cwd=TRAINING_DIR,
+        [sys.executable, str(training_script)],
+        cwd=node_dir,
     )
+
+    active_node = node_name
     recovery_starts_total.inc()
-    print(f"Training process started, pid={training_process.pid}")
+    print(
+        f"Training process started on {node_name}, "
+        f"pid={training_process.pid}"
+    )
 
 
 class AlertHandler(BaseHTTPRequestHandler):
@@ -108,9 +164,20 @@ class AlertHandler(BaseHTTPRequestHandler):
             for alert in payload.get("alerts", []):
                 labels = alert.get("labels", {})
 
+                #如果 Prometheus 报告训练进程停止，controller 会尝试切换到另一个节点继续训练
                 if labels.get("alertname") == "TrainingExporterDown":
-                    print("TrainingExporterDown detected")
-                    start_training()
+                    source_node = active_node
+                    target_node = "node-b" if source_node == "node-a" else "node-a"
+
+                    print(f"TrainingExporterDown detected on {source_node}")
+                    print(f"Preparing migration to {target_node}")
+                    
+                    #如果 Checkpoint 复制成功，则在目标节点启动训练进程
+                    if copy_checkpoint(source_node, target_node):
+                         start_training(target_node)
+                    else:
+                        print("Migration aborted because Checkpoint copy failed")
+
                     break
         
         elif payload.get("status") == "resolved":
