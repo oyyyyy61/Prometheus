@@ -11,7 +11,11 @@ from pathlib import Path
 from prometheus_client import Gauge, start_http_server
 
 
-checkpoint_path = Path("auto_checkpoint.pt")
+checkpoint_path = Path(
+    os.environ.get("TRAINING_CHECKPOINT_PATH", "auto_checkpoint.pt")
+)
+
+print("Checkpoint path =", checkpoint_path.resolve())
 
 #监控最近完成并保存的 epoch
 current_epoch_metric = Gauge(

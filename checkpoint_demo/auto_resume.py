@@ -10,8 +10,12 @@ from torch import nn
 from pathlib import Path
 from prometheus_client import Gauge, start_http_server
 
-
-checkpoint_path = Path("auto_checkpoint.pt")
+#这里使用环境变量 TRAINING_CHECKPOINT_PATH 来指定 Checkpoint 的路径
+#如果没有设置该环境变量，则默认使用当前目录下的 auto_checkpoint.pt
+checkpoint_path = Path(
+    os.environ.get("TRAINING_CHECKPOINT_PATH", "auto_checkpoint.pt")
+)
+print("Checkpoint path =", checkpoint_path.resolve())
 
 #监控最近完成并保存的 epoch
 current_epoch_metric = Gauge(

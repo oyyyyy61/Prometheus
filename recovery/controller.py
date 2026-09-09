@@ -4,6 +4,7 @@ from urllib.error import URLError
 from urllib.parse import urlencode
 from urllib.request import urlopen
 
+import os
 import shutil
 import subprocess
 import sys
@@ -16,13 +17,23 @@ from prometheus_client import Counter, start_http_server
 
 TRAINING_DIR = Path(r"E:\codex\Prometheus\checkpoint_demo")
 TRAINING_SCRIPT = TRAINING_DIR / "auto_resume.py"
-
+recovery_in_progress = False
 
 #节点切换，当node-a训练停止时，controller会切换到node-b继续训练
 NODE_DIRS = {
     "node-a": TRAINING_DIR,
     "node-b": Path(r"E:\codex\Prometheus\migration_demo\node_b"),
 }
+
+#共享 Checkpoint 路径
+SHARED_CHECKPOINT_PATH = Path(
+    r"E:\codex\Prometheus\shared_storage\job-1\auto_checkpoint.pt"
+)
+
+#控制器状态文件路径
+CONTROLLER_STATE_PATH = (
+    SHARED_CHECKPOINT_PATH.parent / "controller_state.json"
+)
 
 CHECKPOINT_NAME = "auto_checkpoint.pt"
 active_node = "node-a"
@@ -71,6 +82,14 @@ def get_training_status():
     value = float(results[0]["value"][1])
     return value == 1.0
 
+#检查训练进程的 metrics 端点是否可访问，返回 True 表示可访问，False 表示不可访问
+def training_endpoint_is_reachable():
+    try:
+        with urlopen("http://127.0.0.1:8000/metrics", timeout=1) as response:
+            return response.getcode() == 200
+    except (URLError, TimeoutError, OSError):
+        return False
+
 #找到训练进程的 checkpoint 文件，并复制到另一个节点
 def copy_checkpoint(source_node, target_node):
     if source_node not in NODE_DIRS:
@@ -97,7 +116,7 @@ def copy_checkpoint(source_node, target_node):
 
 #开始训练进程
 def start_training(node_name=None):
-    global training_process, active_node
+    global training_process, active_node, recovery_in_progress
 
     if node_name is None:
         node_name = active_node
@@ -111,6 +130,11 @@ def start_training(node_name=None):
         print("Training process is already running")
         return
 
+    #判断训练进程的 metrics 端点是否可访问，如果可访问则说明训练进程已经在运行，避免重复启动
+    if training_endpoint_is_reachable():
+        print("Training endpoint is already reachable; skip duplicate start")
+        return
+    
     node_dir = NODE_DIRS[node_name]
     #筛选节点训练脚本路径
     training_script = node_dir / "auto_resume.py"
@@ -119,18 +143,57 @@ def start_training(node_name=None):
         print(f"Training script not found: {training_script}")
         return
 
+    #设置环境变量 TRAINING_CHECKPOINT_PATH，指向共享 Checkpoint 路径
+    training_environment = os.environ.copy()
+    training_environment["TRAINING_CHECKPOINT_PATH"] = str(
+        SHARED_CHECKPOINT_PATH
+    )
+
     #启动训练进程
     training_process = subprocess.Popen(
         [sys.executable, str(training_script)],
         cwd=node_dir,
+        env=training_environment,
     )
 
+    recovery_in_progress = True
+
     active_node = node_name
+    save_active_node(active_node)
     recovery_starts_total.inc()
     print(
         f"Training process started on {node_name}, "
         f"pid={training_process.pid}"
     )
+
+#加载当前活跃的节点，如果控制器状态文件不存在或无效，则默认返回 node-a
+def load_active_node():
+    if not CONTROLLER_STATE_PATH.exists():
+        return "node-a"
+
+    try:
+        state = json.loads(
+            CONTROLLER_STATE_PATH.read_text(encoding="utf-8")
+        )
+    except (OSError, json.JSONDecodeError):
+        return "node-a"
+
+    node_name = state.get("active_node")
+
+    if node_name not in NODE_DIRS:
+        return "node-a"
+
+    return node_name
+
+#保存当前活跃的节点到控制器状态文件
+def save_active_node(node_name):
+    temporary_path = CONTROLLER_STATE_PATH.with_suffix(".json.tmp")
+
+    temporary_path.write_text(
+        json.dumps({"active_node": node_name}),
+        encoding="utf-8",
+    )
+    temporary_path.replace(CONTROLLER_STATE_PATH)
 
 
 class AlertHandler(BaseHTTPRequestHandler):
@@ -144,6 +207,7 @@ class AlertHandler(BaseHTTPRequestHandler):
         self.send_error(404)
 
     def do_POST(self):
+        global recovery_in_progress
         if self.path != "/alert":
             self.send_error(404)
             return
@@ -172,11 +236,13 @@ class AlertHandler(BaseHTTPRequestHandler):
                     print(f"TrainingExporterDown detected on {source_node}")
                     print(f"Preparing migration to {target_node}")
                     
-                    #如果 Checkpoint 复制成功，则在目标节点启动训练进程
-                    if copy_checkpoint(source_node, target_node):
-                         start_training(target_node)
+                    #如果共享 Checkpoint 存在，则使用共享 Checkpoint 启动训练，否则迁移中止
+                    if SHARED_CHECKPOINT_PATH.exists():
+                        print(f"Using shared Checkpoint: {SHARED_CHECKPOINT_PATH}")
+                        start_training(target_node)
                     else:
-                        print("Migration aborted because Checkpoint copy failed")
+                        print(f"Shared Checkpoint not found: {SHARED_CHECKPOINT_PATH}")
+                        print("Migration aborted")
 
                     break
         
@@ -184,10 +250,15 @@ class AlertHandler(BaseHTTPRequestHandler):
             for alert in payload.get("alerts", []):
                 labels = alert.get("labels", {})
 
+                #如果 Prometheus 报告训练进程恢复，controller 会记录恢复成功的指标
                 if labels.get("alertname") == "TrainingExporterDown":
-                    recovery_success_total.inc()
-                    print("Training recovery verified")
-                    print("Prometheus can scrape the training process again")
+                    if recovery_in_progress:
+                        recovery_success_total.inc()
+                        recovery_in_progress = False
+                        print("Training recovery verified")
+                        print("Prometheus can scrape the training process again")
+                    else:
+                        print("Training was already running; no recovery was initiated")
                     break
         
         self.send_response(200)
@@ -197,7 +268,8 @@ class AlertHandler(BaseHTTPRequestHandler):
     def log_message(self, format, *args):
         return
 
-
+active_node = load_active_node()
+print("Loaded active node =", active_node)
 server = HTTPServer(("0.0.0.0", 9000), AlertHandler)
 
 start_http_server(9001)
