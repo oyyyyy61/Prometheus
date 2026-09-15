@@ -1,0 +1,6 @@
+#独立命名空间：把实验资源与集群其他组件（监控、Volcano 等）隔离开，
+#演示完可以用 kubectl delete namespace training-demo 一键清理
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: training-demo

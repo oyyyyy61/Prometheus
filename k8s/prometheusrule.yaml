@@ -1,0 +1,36 @@
+#告警规则。注意：本集群 Prometheus 的 ruleSelector 要求 release=monitoring 标签，
+#缺少这个标签规则会被静默忽略（这是 kube-prometheus-stack 的默认安全行为，
+#防止不同团队/不同 release 部署的规则互相污染）。
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: training-demo-alerts
+  namespace: training-demo
+  labels:
+    release: monitoring
+spec:
+  groups:
+    - name: training-checkpoint
+      rules:
+        #"活死人"告警：进程活着（up==1）但快照超过 30 秒没有更新。
+        #常见于磁盘满、存储卡死——这类故障从 Pod 状态上完全看不出异常，
+        #watch Pod 的控制器也发现不了，只有指标时间戳能暴露它。
+        #这正是告警链路与 K8s watch 控制器互补的地方。
+        - alert: TrainingCheckpointStale
+          expr: time() - training_checkpoint_save_timestamp_seconds > 30
+          labels:
+            severity: warning
+          annotations:
+            summary: "训练快照超过 30 秒未更新"
+            description: "训练进程可能仍在运行，但 Checkpoint 已停止保存，此时发生故障将丢失大量进度"
+        #Pod 长时间不可用告警。
+        #正常情况下自定义控制器会在秒级完成恢复，如果超过 1 分钟还没有可用副本，
+        #说明自动恢复链路本身可能出了问题，需要人工介入
+        - alert: TrainingPodUnavailable
+          expr: kube_deployment_status_replicas_available{namespace="training-demo", deployment="training-demo"} == 0
+          for: 1m
+          labels:
+            severity: critical
+          annotations:
+            summary: "training-demo 没有可用的 Pod"
+            description: "Deployment 超过 1 分钟没有可用副本，自动恢复可能已失败"

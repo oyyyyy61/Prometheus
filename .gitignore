@@ -2,3 +2,6 @@ checkpoint_demo/checkpoint.pt
 checkpoint_demo/checkpoint.pt.tmp
 **/__pycache__/
 *.pyc
+
+#构建镜像用的本地 wheel 包（体积大，可重新下载）
+k8s/wheels/

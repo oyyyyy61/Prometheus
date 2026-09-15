@@ -1,0 +1,18 @@
+#PodMonitor 是 prometheus-operator 提供的 CRD：
+#用声明式的方式告诉 Prometheus "哪些 Pod 的哪个端口应该被抓取"。
+#已确认本集群 Prometheus 的 podMonitorSelector 为空（匹配所有 PodMonitor），
+#所以这个资源不需要任何特殊标签就会被选中。
+#对比旧的 Docker 方案：那里要在 prometheus.yml 里写死 targets IP，
+#这里 Pod 重建后 IP 变了也没关系，Prometheus 靠标签选择器自动发现。
+apiVersion: monitoring.coreos.com/v1
+kind: PodMonitor
+metadata:
+  name: training-demo
+  namespace: training-demo
+spec:
+  selector:
+    matchLabels:
+      app: training-demo
+  podMetricsEndpoints:
+    - port: metrics    #对应 Deployment 中容器端口的命名
+      interval: 5s     #与旧 Docker 方案的 scrape_interval 一致，便于对比两条链路

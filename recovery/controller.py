@@ -15,19 +15,20 @@ from http.server import BaseHTTPRequestHandler, HTTPServer
 from prometheus_client import Counter, start_http_server
 
 
-TRAINING_DIR = Path(r"E:\codex\Prometheus\checkpoint_demo")
-TRAINING_SCRIPT = TRAINING_DIR / "auto_resume.py"
+#以本文件所在位置推导项目根目录，保证在不同设备上路径都正确
+PROJECT_ROOT = Path(__file__).resolve().parent.parent
+
 recovery_in_progress = False
 
 #节点切换，当node-a训练停止时，controller会切换到node-b继续训练
 NODE_DIRS = {
-    "node-a": TRAINING_DIR,
-    "node-b": Path(r"E:\codex\Prometheus\migration_demo\node_b"),
+    "node-a": PROJECT_ROOT / "checkpoint_demo",
+    "node-b": PROJECT_ROOT / "migration_demo" / "node_b",
 }
 
 #共享 Checkpoint 路径
-SHARED_CHECKPOINT_PATH = Path(
-    r"E:\codex\Prometheus\shared_storage\job-1\auto_checkpoint.pt"
+SHARED_CHECKPOINT_PATH = (
+    PROJECT_ROOT / "shared_storage" / "job-1" / "auto_checkpoint.pt"
 )
 
 #控制器状态文件路径

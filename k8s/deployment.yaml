@@ -1,0 +1,82 @@
+#训练工作负载：Deployment 保证任何时刻都有 1 个训练 Pod 在运行。
+#Pod 异常退出时 Deployment 控制器会自动补一个新的，
+#我们的自定义控制器（recovery/k8s_controller.py）负责"发现故障 + 验证恢复质量"，
+#两者分工协作，互不越界。
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: training-demo
+  namespace: training-demo
+  labels:
+    app: training-demo
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: training-demo
+  template:
+    metadata:
+      labels:
+        #PodMonitor 和自定义控制器都靠这个标签找到训练 Pod
+        app: training-demo
+    spec:
+      #删除 Pod 时 Kubernetes 先发送 SIGTERM，等待脚本在安全点保存并退出，
+      #60 秒后仍未退出才强制杀死（SIGKILL）。
+      #训练脚本的信号处理保证 SIGTERM 后最多一个 epoch（约 1 秒）就安全停止，
+      #所以这个宽限期非常充裕
+      terminationGracePeriodSeconds: 60
+      containers:
+        - name: training
+          #镜像来自本机 127.0.0.1:5000 的本地 registry（containerd 对 localhost
+          #registry 默认允许 HTTP，无需修改集群配置）。
+          #如果改用 sudo ctr 方式把镜像直接导入 containerd，把这里改成
+          #training-runtime:v1，并把 imagePullPolicy 改为 IfNotPresent
+          image: 127.0.0.1:5000/training-runtime:v1
+          imagePullPolicy: IfNotPresent
+          command: ["python", "/app/auto_resume.py"]
+          env:
+            #训练脚本本来就通过环境变量指定快照路径，容器化不需要改代码
+            - name: TRAINING_CHECKPOINT_PATH
+              value: /checkpoints/auto_checkpoint.pt
+            #Downward API：把 Pod 的实际运行信息注入环境变量，
+            #训练脚本把它们作为 Prometheus 指标的 node/pod 标签
+            - name: TRAINING_POD_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.name
+            - name: TRAINING_NODE_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: spec.nodeName
+          ports:
+            #PodMonitor 通过端口"名字"引用抓取目标，所以必须命名
+            - name: metrics
+              containerPort: 8000
+          resources:
+            #requests 是调度依据，也是节点资源紧张时的保护线；
+            #没有 requests 的 Pod 会最先被驱逐
+            requests:
+              cpu: 250m
+              memory: 512Mi
+            limits:
+              cpu: "1"
+              memory: 1Gi
+          volumeMounts:
+            - name: script
+              mountPath: /app
+            - name: checkpoint-storage
+              mountPath: /checkpoints
+      volumes:
+        #训练脚本以 ConfigMap 形式挂载，与宿主机 demo 共用同一份文件，
+        #改脚本后只需重建 ConfigMap 并重启 Pod，不需要重新构建镜像
+        - name: script
+          configMap:
+            name: training-script
+        #单节点集群里 hostPath 就是"共享存储"的最简实现：
+        #Pod 被重建后仍能看到同一份快照文件。
+        #这里直接复用之前实验积累的 shared_storage/job-1（562 个 epoch 的真实进度），
+        #Pod 首次启动就会演示"从快照恢复"。多节点集群时应替换为 NFS 或 RWX PVC
+        - name: checkpoint-storage
+          hostPath:
+            path: /home/og/Prometheus/checkpoint/Prometheus/shared_storage/job-1
+            type: Directory
