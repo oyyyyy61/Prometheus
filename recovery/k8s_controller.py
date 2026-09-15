@@ -147,7 +147,48 @@ def reconcile(pods, api, event_hint):
                 log(f"Prometheus 确认训练已续上：training_current_epoch = {epoch:.0f}")
         return
 
-    #走到这里说明当前没有健康的训练 Pod
+    #删除事件可能在替代 Pod 创建前让列表暂时为空；记录这段恢复窗口，
+    #后续新 Pod Ready 时才能完成一次完整的恢复验证。
+    if not pods and event_hint.startswith("事件 DELETED"):
+        if not recovery_in_progress:
+            recovery_in_progress = True
+            recovery_started_at = time.time()
+            recovery_starts_total.inc()
+            log(f"检测到训练 Pod 被删除（{event_hint}），等待 Deployment 创建替代 Pod")
+        training_pod_healthy.set(0)
+        return
+
+    #没有健康 Pod 时，先区分“训练已完成/正在启动”和“确实故障”。
+    #Deployment 管理的 Succeeded Pod 仍可能短暂产生 MODIFIED 事件，
+    #不能因为它没有 Ready 容器就启动恢复流程。
+    failed_pods = []
+    pending_pods = []
+    for pod in pods:
+        statuses = pod.status.container_statuses or []
+        finished_ok = any(
+            s.state.terminated and s.state.terminated.exit_code == 0 for s in statuses
+        )
+        if pod.status.phase == "Succeeded" or finished_ok:
+            handled_pods.add(pod.metadata.name)
+            continue
+
+        problem = describe_pod_problem(pod)
+        if pod.status.phase in ("Failed", "Unknown") or "BackOff" in problem or "Error" in problem:
+            failed_pods.append((pod, problem))
+        else:
+            pending_pods.append(pod)
+
+    #没有失败 Pod：可能是训练正常完成，也可能是替代 Pod 尚未 Ready。
+    #这两种状态都交给 Deployment/kubelet 继续推进，不计入恢复。
+    if not failed_pods:
+        training_pod_healthy.set(0)
+        if pending_pods:
+            log(f"当前没有健康 Pod，等待 {len(pending_pods)} 个 Pod 启动")
+        else:
+            recovery_in_progress = False
+        return
+
+    #走到这里说明当前没有健康 Pod，且至少有一个明确失败的 Pod
     training_pod_healthy.set(0)
 
     if recovery_in_progress:
@@ -160,33 +201,19 @@ def reconcile(pods, api, event_hint):
     recovery_starts_total.inc()
     log(f"检测到训练中断（{event_hint}），开始恢复流程")
 
-    for pod in pods:
+    for pod, problem in failed_pods:
         name = pod.metadata.name
         if name in handled_pods:
             continue
-
-        statuses = pod.status.container_statuses or []
-        finished_ok = any(
-            s.state.terminated and s.state.terminated.exit_code == 0 for s in statuses
-        )
-        if pod.status.phase == "Succeeded" or finished_ok:
-            #exit code 0 表示训练脚本自己跑完了（epoch 达到上限），
-            #这不是故障，不应该"恢复"它，否则会把已完成的任务反复拉起来
-            log(f"Pod {name} 正常结束（训练完成），不执行恢复")
-            handled_pods.add(name)
-            continue
-
-        problem = describe_pod_problem(pod)
-        if pod.status.phase in ("Failed", "Unknown") or "BackOff" in problem or "Error" in problem:
-            #Pod 已经卡死：Failed 不会被 Deployment 替换（它仍占用副本计数），
-            #CrashLoopBackOff 是 kubelet 原地重启同一个容器，错误状态会一直持续。
-            #这两种情况都需要我们删掉旧 Pod，Deployment 才会创建全新的 Pod
-            log(f"删除卡死的 Pod {name}（{problem}），由 Deployment 自动补齐新 Pod")
-            try:
-                api.delete_namespaced_pod(name, NAMESPACE)
-            except ApiException as error:
-                log(f"删除 Pod {name} 失败: {error.status} {error.reason}")
-            handled_pods.add(name)
+        #Pod 已经卡死：Failed 不会被 Deployment 替换（它仍占用副本计数），
+        #CrashLoopBackOff 是 kubelet 原地重启同一个容器，错误状态会一直持续。
+        #这两种情况都需要我们删掉旧 Pod，Deployment 才会创建全新的 Pod
+        log(f"删除卡死的 Pod {name}（{problem}），由 Deployment 自动补齐新 Pod")
+        try:
+            api.delete_namespaced_pod(name, NAMESPACE)
+        except ApiException as error:
+            log(f"删除 Pod {name} 失败: {error.status} {error.reason}")
+        handled_pods.add(name)
 
 
 #LIST + WATCH 主循环

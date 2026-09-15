@@ -81,7 +81,7 @@ optimizer = torch.optim.SGD(model.parameters(), lr=0.01)
 loss_function = nn.MSELoss()
 
 start_epoch = 1
-total_epochs = 1000
+total_epochs = 2000
 
 if checkpoint_path.exists():
     print("发现 Checkpoint，准备恢复训练")
