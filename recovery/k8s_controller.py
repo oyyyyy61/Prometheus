@@ -18,6 +18,7 @@
 #  自己重新创建 Pod 等于和 Deployment 抢活干，是两个控制器打架的经典错误。
 
 import json
+import os
 import time
 from urllib.error import URLError
 from urllib.parse import urlencode
@@ -34,7 +35,10 @@ LABEL_SELECTOR = "app=training-demo"
 #宿主机可以直达集群内 Prometheus 的 ClusterIP（单节点集群的便利）。
 #如果控制器以后搬进集群内部运行，应改为 Service DNS 名：
 #http://monitoring-kube-prometheus-prometheus.monitoring:9090
-PROMETHEUS_QUERY_URL = "http://10.233.61.150:9090/api/v1/query"
+PROMETHEUS_QUERY_URL = os.environ.get(
+    "PROMETHEUS_QUERY_URL",
+    "http://monitoring-kube-prometheus-prometheus.monitoring.svc:9090/api/v1/query",
+)
 
 #WATCH 流的空闲超时。到期后流会正常结束，我们回到 LIST 重建基线。
 #这能防止"连接看似还在、实际已经收不到事件"的僵死状态
@@ -189,10 +193,13 @@ def reconcile(pods, api, event_hint):
 def run():
     global RECONNECT_BACKOFF_SECONDS
 
-    #从 ~/.kube/config 加载集群连接配置（宿主机运行方式）。
-    #如果将来把控制器做成 Deployment 搬进集群，这里换成
-    #config.load_incluster_config()，并配置 ServiceAccount + RBAC
-    config.load_kube_config()
+    #优先使用集群内身份；本地调试时回退到 ~/.kube/config。
+    try:
+        config.load_incluster_config()
+        log("使用集群内 Kubernetes 身份")
+    except config.ConfigException:
+        config.load_kube_config()
+        log("使用本地 kubeconfig")
     api = client.CoreV1Api()
     log(f"K8s 恢复控制器已启动，监听 {NAMESPACE} 中标签为 {LABEL_SELECTOR} 的 Pod")
 

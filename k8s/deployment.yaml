@@ -74,7 +74,7 @@ spec:
             name: training-script
         #单节点集群里 hostPath 就是"共享存储"的最简实现：
         #Pod 被重建后仍能看到同一份快照文件。
-        #这里直接复用之前实验积累的 shared_storage/job-1（562 个 epoch 的真实进度），
+        #这里直接复用之前实验积累的 shared_storage/job-1（已有训练进度），
         #Pod 首次启动就会演示"从快照恢复"。多节点集群时应替换为 NFS 或 RWX PVC
         - name: checkpoint-storage
           hostPath:

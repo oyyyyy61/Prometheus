@@ -1,0 +1,34 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: training-recovery-controller
+  namespace: training-demo
+  labels:
+    app: training-recovery-controller
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: training-recovery-controller
+  template:
+    metadata:
+      labels:
+        app: training-recovery-controller
+    spec:
+      serviceAccountName: training-recovery-controller
+      containers:
+        - name: controller
+          image: 127.0.0.1:5000/training-recovery-controller:v1
+          imagePullPolicy: IfNotPresent
+          env:
+            - name: PROMETHEUS_QUERY_URL
+              value: http://monitoring-kube-prometheus-prometheus.monitoring.svc:9090/api/v1/query
+          ports:
+            - name: metrics
+              containerPort: 9100
+          livenessProbe:
+            httpGet:
+              path: /metrics
+              port: metrics
+            initialDelaySeconds: 10
+            periodSeconds: 15
