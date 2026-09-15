@@ -129,6 +129,15 @@ def query_training_epoch():
 def reconcile(pods, api, event_hint):
     global recovery_in_progress, recovery_started_at
 
+    #先处理删除事件，再检查当前列表中的健康 Pod。
+    #Deployment 可能在控制器处理 DELETED 事件前就创建并启动替代 Pod；
+    #如果先检查 healthy_pods，会错过这次恢复窗口。
+    if event_hint.startswith("事件 DELETED") and not recovery_in_progress:
+        recovery_in_progress = True
+        recovery_started_at = time.time()
+        recovery_starts_total.inc()
+        log(f"检测到训练 Pod 被删除（{event_hint}），等待替代 Pod 就绪")
+
     healthy_pods = [p for p in pods if pod_is_healthy(p)]
 
     if healthy_pods:
@@ -166,7 +175,13 @@ def reconcile(pods, api, event_hint):
     for pod in pods:
         statuses = pod.status.container_statuses or []
         finished_ok = any(
-            s.state.terminated and s.state.terminated.exit_code == 0 for s in statuses
+            (
+                s.state.terminated and s.state.terminated.exit_code == 0
+            )
+            or (
+                s.last_state.terminated and s.last_state.terminated.exit_code == 0
+            )
+            for s in statuses
         )
         if pod.status.phase == "Succeeded" or finished_ok:
             handled_pods.add(pod.metadata.name)

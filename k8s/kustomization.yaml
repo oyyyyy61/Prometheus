@@ -3,6 +3,7 @@ kind: Kustomization
 
 resources:
   - namespace.yaml
+  - storage.yaml
   - controller-rbac.yaml
   - deployment.yaml
   - controller-deployment.yaml

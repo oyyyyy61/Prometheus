@@ -81,7 +81,7 @@ optimizer = torch.optim.SGD(model.parameters(), lr=0.01)
 loss_function = nn.MSELoss()
 
 start_epoch = 1
-total_epochs = 2000
+total_epochs = 3000
 
 if checkpoint_path.exists():
     print("发现 Checkpoint，准备恢复训练")
@@ -178,3 +178,16 @@ try:
 except KeyboardInterrupt:
     print("\n训练被手动暂停")
     print("下次启动将读取最近一次成功保存的 Checkpoint")
+
+# Deployment 的 restartPolicy 固定为 Always。
+# 训练完成后保持进程存活，避免 kubelet 反复重启一个已完成的任务。
+if checkpoint_path.exists() and not stop_requested:
+    final_checkpoint = torch.load(
+        checkpoint_path,
+        map_location="cpu",
+        weights_only=True,
+    )
+    if int(final_checkpoint["next_epoch"]) > total_epochs:
+        print("训练已完成，保持 Pod 运行以维持 Deployment 副本", flush=True)
+        while not stop_requested:
+            time.sleep(30)

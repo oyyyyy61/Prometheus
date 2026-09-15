@@ -72,11 +72,8 @@ spec:
         - name: script
           configMap:
             name: training-script
-        #单节点集群里 hostPath 就是"共享存储"的最简实现：
-        #Pod 被重建后仍能看到同一份快照文件。
-        #这里直接复用之前实验积累的 shared_storage/job-1（已有训练进度），
-        #Pod 首次启动就会演示"从快照恢复"。多节点集群时应替换为 NFS 或 RWX PVC
+        #Checkpoint 使用 RWX PVC，Pod 调度到其他节点后仍能读取同一份快照。
+        #PVC 由 k8s/storage.yaml 创建，后端可以是 NFS、CephFS 或其他共享存储。
         - name: checkpoint-storage
-          hostPath:
-            path: /home/og/Prometheus/checkpoint/Prometheus/shared_storage/job-1
-            type: Directory
+          persistentVolumeClaim:
+            claimName: training-checkpoint-pvc

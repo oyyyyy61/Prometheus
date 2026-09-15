@@ -1,0 +1,29 @@
+# 手工绑定的共享 Checkpoint 存储示例。
+# 部署前请把 server 和 path 改成你的 NFS 服务地址与共享目录。
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: training-checkpoint-pv
+spec:
+  capacity:
+    storage: 1Gi
+  accessModes: [ReadWriteMany]
+  persistentVolumeReclaimPolicy: Retain
+  storageClassName: training-nfs
+  mountOptions: [hard, nfsvers=4.1]
+  nfs:
+    server: 192.168.1.50
+    path: /srv/prometheus-checkpoints
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: training-checkpoint-pvc
+  namespace: training-demo
+spec:
+  accessModes: [ReadWriteMany]
+  resources:
+    requests:
+      storage: 1Gi
+  storageClassName: training-nfs
+  volumeName: training-checkpoint-pv
