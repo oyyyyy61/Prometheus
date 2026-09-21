@@ -27,11 +27,11 @@ spec:
       terminationGracePeriodSeconds: 60
       containers:
         - name: training
-          #镜像来自本机 127.0.0.1:5000 的本地 registry（containerd 对 localhost
+          #镜像来自本机 192.168.1.50:5000 的本地 registry（containerd 对 localhost
           #registry 默认允许 HTTP，无需修改集群配置）。
           #如果改用 sudo ctr 方式把镜像直接导入 containerd，把这里改成
           #training-runtime:v1，并把 imagePullPolicy 改为 IfNotPresent
-          image: 127.0.0.1:5000/training-runtime:v1
+          image: 192.168.1.50:5000/training-runtime:v1
           imagePullPolicy: IfNotPresent
           command: ["python", "/app/auto_resume.py"]
           env:

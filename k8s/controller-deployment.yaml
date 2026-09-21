@@ -18,7 +18,7 @@ spec:
       serviceAccountName: training-recovery-controller
       containers:
         - name: controller
-          image: 127.0.0.1:5000/training-recovery-controller:v1
+          image: 192.168.1.50:5000/training-recovery-controller:v1
           imagePullPolicy: IfNotPresent
           env:
             - name: PROMETHEUS_QUERY_URL
