@@ -28,6 +28,26 @@
 
 当前 Kubernetes 闭环包括：Deployment 维持训练 Pod，`recovery/k8s_controller.py` 通过 LIST/WATCH 发现失败 Pod 并删除卡死实例，替代 Pod 从共享 Checkpoint 恢复；PodMonitor 和 PrometheusRule 负责指标采集与告警。
 
+## 研究原型：预算化主动观测与安全控制
+
+`research/` 保存与现有恢复控制器隔离的研究基线，用于研究：
+
+```text
+预算化观测选择
+→ telemetry 完整性判断
+→ 证据和风险约束的控制门控
+→ 动作后验证
+```
+
+运行参考实现的单元测试：
+
+```bash
+cd research
+python -m unittest -v test_budgeted_control.py
+```
+
+JSONL 回放入口见 [`research/README.md`](./research/README.md)。
+
 ## 当前目录结构
 
 ```text
