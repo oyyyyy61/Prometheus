@@ -1,0 +1,28 @@
+#
+
+apiVersion: monitoring.coreos.com/v1alpha1
+kind: ScrapeConfig
+metadata:
+  name: lab-501
+  namespace: monitoring
+  labels:
+    release: monitoring
+spec:
+  staticConfigs:
+    - targets:
+        - "10.1.125.178:9100"
+      labels:
+        host: "lab-501"
+        component: "node"
+        machine: "RTX-4090"
+    - targets:
+        - "10.1.125.178:9400"
+      labels:
+        host: "lab-501"
+        component: "gpu"
+        machine: "RTX-4090"  
+    - targets:
+        - "47.97.29.34:9100"
+      labels:
+        host: "qujing"
+        component: "node"

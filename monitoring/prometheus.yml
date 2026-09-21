@@ -21,3 +21,17 @@ scrape_configs:
   - job_name: "recovery-controller"
     static_configs:
       - targets: ["host.docker.internal:9001"]
+
+  #9100 提供 CPU、内存、网络等主机指标
+  - job_name: "lab-501-node"
+    static_configs:
+      - targets: ["10.1.125.178:9100"]
+        labels:
+          machine: "RTX-4090"
+  #监控 4090 本身还需抓取 9400
+  - job_name: lab-501-dcgm
+    scrape_interval: 5s
+    static_configs:
+      - targets: ["10.1.125.178:9400"]
+        labels:
+          machine: "RTX-4090"

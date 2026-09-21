@@ -9,3 +9,4 @@ resources:
   - controller-deployment.yaml
   - podmonitor.yaml
   - prometheusrule.yaml
+  - scrapeconfig-remote-node.yaml
