@@ -56,6 +56,7 @@ Prometheus/
 ├── checkpoint_demo/
 ├── migration_demo/
 ├── recovery/
+├── npu/
 ├── shared_storage/
 ├── monitoring/
 └── k8s/
@@ -68,4 +69,30 @@ Prometheus/
     ├── prometheusrule.yaml
     ├── kustomization.yaml
     └── *.Dockerfile
+```
+
+NPU 聚合 recording rules 和 Agent-aware memory exporter 位于 `npu/`。当前 Kubernetes
+集群可以用 `kubectl apply -k npu` 单独部署；`kubectl apply -k k8s` 也会通过 Kustomize
+引用该目录。
+
+## 一条命令启动完整监控链路
+
+远端 NPU 主机、SSH 转发和当前 Kubernetes 集群使用默认配置时，在项目根目录执行：
+
+```bash
+./scripts/start-monitoring.sh
+```
+
+该命令会复用或启动远端 `vllm_agent_bridge.py:8002`，建立本地
+`19100 -> 9100`、`18082 -> 8082`、`18010 -> 8002` 转发，然后执行
+`kubectl apply -k k8s` 和 `kubectl apply -k grafana`。首次运行会提示一次 SSH 密码。
+
+远端地址或目录不同，使用环境变量覆盖默认值：
+
+```bash
+REMOTE_SSH_TARGET='user@host' \
+REMOTE_SSH_PORT=32222 \
+REMOTE_OBSERVABILITY_DIR=/data/Agentrix/observability \
+REMOTE_PYTHON=/data/Agentrix/.venv/bin/python \
+./scripts/start-monitoring.sh
 ```

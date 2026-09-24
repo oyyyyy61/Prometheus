@@ -34,6 +34,11 @@ kubectl -n training-demo create configmap training-script \
 kubectl apply -k k8s
 ```
 
+该 Kustomize 入口同时包含 `npu/` 目录中的 NPU 聚合 recording rules 和
+Agent memory exporter 的 PodMonitor。推理 Pod 需要添加
+`agent-memory-exporter: enabled` 标签，并暴露名为 `agent-metrics` 的 8001 端口，
+PodMonitor 才会抓取运行时指标。
+
 执行 `kubectl apply -k k8s` 前需要先创建 `training-script` ConfigMap；更新脚本后重新执行创建命令并滚动重启训练 Deployment。
 
 ## 双节点迁移测试

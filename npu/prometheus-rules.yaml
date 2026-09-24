@@ -1,0 +1,248 @@
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: npu-aggregate-recording-rules
+  namespace: monitoring
+  labels:
+    release: monitoring
+spec:
+  groups:
+    - name: npu-aggregate
+      interval: 15s
+      rules:
+        # NPU exporter 的 HBM 内存指标按 MiB 暴露；规则名称显式带上单位。
+        - record: npu:hbm_used_memory_mib:sum
+          expr: |
+            sum by (host, machine) (
+              npu_chip_info_hbm_used_memory{component="npu"}
+            )
+        - record: npu:hbm_total_memory_mib:sum
+          expr: |
+            sum by (host, machine) (
+              npu_chip_info_hbm_total_memory{component="npu"}
+            )
+        - record: npu:hbm_free_memory_mib:sum
+          expr: |
+            clamp_min(
+              npu:hbm_total_memory_mib:sum - npu:hbm_used_memory_mib:sum,
+              0
+            )
+        - record: npu:hbm_utilization_ratio
+          expr: |
+            npu:hbm_used_memory_mib:sum
+            /
+            npu:hbm_total_memory_mib:sum
+        - record: npu:hbm_utilization_percent
+          expr: 100 * npu:hbm_utilization_ratio
+
+        # process_info 是 exporter 报告的进程级 HBM 占用，同样按 MiB 处理。
+        - record: npu:process_hbm_memory_mib:sum
+          expr: |
+            sum by (host, machine) (
+              npu_chip_info_process_info{component="npu"}
+            )
+        - record: npu:process_hbm_used_ratio_raw
+          expr: |
+            npu:process_hbm_memory_mib:sum
+            /
+            clamp_min(npu:hbm_used_memory_mib:sum, 1)
+        - record: npu:process_hbm_used_ratio
+          expr: |
+            clamp_max(clamp_min(npu:process_hbm_used_ratio_raw, 0), 1)
+        - record: npu:process_hbm_capacity_ratio
+          expr: |
+            clamp_max(
+              clamp_min(
+                npu:process_hbm_memory_mib:sum
+                /
+                clamp_min(npu:hbm_total_memory_mib:sum, 1),
+                0
+              ),
+              1
+            )
+        - record: npu:process_hbm_data_consistent:bool
+          expr: |
+            npu:process_hbm_memory_mib:sum
+            <= bool
+            npu:hbm_used_memory_mib:sum * 1.05
+        - record: npu:process_count:sum
+          expr: |
+            sum by (host, machine) (
+              npu_chip_info_process_info_num{component="npu"}
+            )
+
+        # timestamp() 让控制逻辑知道 exporter 的最后一个样本有多旧。
+        # HBM 组默认 60 秒刷新，Prometheus 的 5 秒抓取不会改变这个事实。
+        - record: npu:hbm_metrics_age_seconds
+          expr: |
+            max by (host, machine) (
+              time() - timestamp(
+                npu_chip_info_hbm_used_memory{component="npu"}
+              )
+            )
+        - record: npu:hbm_metrics_fresh:bool
+          expr: npu:hbm_metrics_age_seconds < bool 180
+        - record: npu:exporter_up:bool
+          expr: |
+            min by (host, machine) (
+              up{component="npu"}
+            )
+        - record: npu:telemetry_usable
+          expr: |
+            npu:hbm_metrics_fresh:bool
+            * on (host, machine)
+            npu:exporter_up:bool
+
+        - record: npu:compute_utilization_percent:avg
+          expr: |
+            avg by (host, machine) (
+              npu:aicore_utilization_percent
+            )
+        - record: npu:hbm_bandwidth_utilization_percent:avg
+          expr: |
+            avg by (host, machine) (
+              npu:hbm_bandwidth_utilization_percent
+            )
+        - record: npu:aicore_utilization_percent
+          expr: |
+            agent_npu_aicore_utilization_percent{component="agent-runtime"}
+            or on (host, machine, id)
+            npu_chip_info_overall_utilization{component="npu"}
+        - record: npu:hbm_bandwidth_utilization_percent
+          expr: |
+            agent_npu_hbm_bandwidth_utilization_percent{component="agent-runtime"}
+            or on (host, machine, id)
+            npu_chip_info_hbm_bandwidth_utilization{component="npu"}
+        - record: npu:power_watts:sum
+          expr: |
+            sum by (host, machine) (
+              npu_chip_info_power{component="npu"}
+            )
+        - record: npu:inference_requests_running:sum
+          expr: |
+            sum by (host, machine) (
+              agent_runtime_requests_running{component="agent-runtime"}
+            )
+        - record: npu:inference_activity:bool
+          expr: npu:inference_requests_running:sum > bool 0
+        - record: npu:compute_telemetry_available:bool
+          expr: |
+            max by (host, machine) (
+              npu:aicore_utilization_percent
+            ) > bool 0
+
+    - name: agent-aggregate
+      interval: 15s
+      rules:
+        # Agent bridge 的状态指标统一保留租卡、运行时、模型和设备维度。
+        - record: agent:lifecycle_agents:sum
+          expr: |
+            sum by (host, machine, runtime, model, device, state, stage) (
+              agent_lifecycle_agents{component="agent-runtime"}
+            )
+        - record: agent:active_agents:sum
+          expr: |
+            sum by (host, machine, runtime, model, device) (
+              agent_lifecycle_agents{component="agent-runtime",state="active"}
+            )
+        - record: agent:context_tokens:sum
+          expr: |
+            sum by (host, machine, runtime, model, device, state, stage) (
+              agent_lifecycle_context_tokens{component="agent-runtime"}
+            )
+        - record: agent:branch_count:sum
+          expr: |
+            sum by (host, machine, runtime, model, device, state, stage) (
+              agent_lifecycle_branch_count{component="agent-runtime"}
+            )
+        - record: agent:tool_wait_seconds:sum
+          expr: |
+            sum by (host, machine, runtime, model, device, state, stage) (
+              agent_lifecycle_tool_wait_seconds{component="agent-runtime"}
+            )
+
+        - record: agent:memory_bytes:sum
+          expr: |
+            sum by (host, machine, runtime, model, device, memory_kind, state, tier, view) (
+              agent_memory_bytes{component="agent-runtime"}
+            )
+        - record: agent:kv_cache_physical_bytes:sum
+          expr: |
+            sum by (host, machine, runtime, model, device) (
+              agent_memory_bytes{component="agent-runtime",memory_kind="kv_cache",view="physical"}
+            )
+        - record: agent:kv_cache_logical_bytes:sum
+          expr: |
+            sum by (host, machine, runtime, model, device) (
+              agent_memory_bytes{component="agent-runtime",memory_kind="kv_cache",view="logical"}
+            )
+        - record: agent:memory_blocks:sum
+          expr: |
+            sum by (host, machine, runtime, model, device, memory_kind, state, tier) (
+              agent_memory_blocks{component="agent-runtime"}
+            )
+
+        - record: agent:kv_hit_ratio:5m
+          expr: |
+            sum by (host, machine, runtime, model, device) (
+              rate(agent_kv_cache_hits_total{component="agent-runtime"}[5m])
+            )
+            /
+            clamp_min(
+              sum by (host, machine, runtime, model, device) (
+                rate(agent_kv_cache_hits_total{component="agent-runtime"}[5m])
+              )
+              +
+              sum by (host, machine, runtime, model, device) (
+                rate(agent_kv_cache_misses_total{component="agent-runtime"}[5m])
+              ),
+              1e-9
+            )
+        - record: agent:kv_hit_ratio:cumulative
+          expr: |
+            agent_kv_cache_hit_ratio{component="agent-runtime"}
+        - record: agent:kv_recompute_tokens_per_second:5m
+          expr: |
+            sum by (host, machine, runtime, model, device) (
+              rate(agent_kv_recompute_tokens_total{component="agent-runtime"}[5m])
+            )
+        - record: agent:prompt_tokens_per_second:5m
+          expr: |
+            sum by (host, machine, runtime, model, device, engine) (
+              rate(agent_prompt_tokens_total{component="agent-runtime"}[5m])
+            )
+        - record: agent:generation_tokens_per_second:5m
+          expr: |
+            sum by (host, machine, runtime, model, device, engine) (
+              rate(agent_generation_tokens_total{component="agent-runtime"}[5m])
+            )
+
+        - record: agent:runtime_requests_running:sum
+          expr: |
+            sum by (host, machine, runtime, model, device, engine) (
+              agent_runtime_requests_running{component="agent-runtime"}
+            )
+        - record: agent:runtime_requests_waiting:sum
+          expr: |
+            sum by (host, machine, runtime, model, device, engine) (
+              agent_runtime_requests_waiting{component="agent-runtime"}
+            )
+        - record: agent:lifecycle_events_per_second:5m
+          expr: |
+            sum by (host, machine, runtime, model, device, event) (
+              rate(agent_lifecycle_events_total{component="agent-runtime"}[5m])
+            )
+
+        # exporter 自身的更新时间用于区分“目标在线”和“数据仍在更新”。
+        - record: agent:exporter_up:bool
+          expr: |
+            min by (host, machine, runtime) (
+              up{component="agent-runtime"}
+            )
+        - record: agent:metrics_age_seconds
+          expr: |
+            time() - max by (host, machine, runtime, model, device) (
+              agent_memory_exporter_last_update_timestamp_seconds{component="agent-runtime"}
+            )
+        - record: agent:metrics_fresh:bool
+          expr: agent:metrics_age_seconds < bool 90
