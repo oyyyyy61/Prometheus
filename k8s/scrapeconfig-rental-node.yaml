@@ -1,0 +1,44 @@
+apiVersion: monitoring.coreos.com/v1alpha1
+kind: ScrapeConfig
+metadata:
+  name: rental-node
+  namespace: monitoring
+  labels:
+    release: monitoring
+spec:
+  # SSH 隧道监听在 Kubernetes 节点 og 的 192.168.1.50:19100，
+  # 该地址转发到租卡容器内的 node_exporter:9100。
+  scrapeInterval: 5s
+  scrapeTimeout: 4s
+  staticConfigs:
+    - targets:
+        - "192.168.1.50:19100"
+      labels:
+        host: "rental-910b2"
+        component: "node"
+        machine: "Ascend-910B2"
+    # SSH 隧道 192.168.1.50:18082 转发到租卡容器内的 NPU Exporter:8082。
+    - targets:
+        - "192.168.1.50:18082"
+      labels:
+        host: "rental-910b2"
+        component: "npu"
+        machine: "Ascend-910B2"
+        accelerator_vendor: "Huawei"
+        accelerator_model: "Ascend-910B2"
+    # 监控Agent执行内容
+    - targets:
+        - "192.168.1.50:18010"
+      labels:
+        host: "rental-910b2"
+        component: "agent-runtime"
+        machine: "Ascend-910B2"
+        runtime: "vllm-agent-bridge"
+    # SSH 隧道 192.168.1.50:19004 转发 recovery agent 的 Prometheus 指标端口。
+    - targets:
+        - "192.168.1.50:19004"
+      labels:
+        host: "rental-910b2"
+        component: "recovery-agent"
+        machine: "Ascend-910B2"
+        runtime: "remote-recovery-agent"

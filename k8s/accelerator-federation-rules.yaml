@@ -1,0 +1,133 @@
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: accelerator-federation-recording-rules
+  namespace: monitoring
+  labels:
+    release: monitoring
+spec:
+  groups:
+    - name: accelerator-federation
+      interval: 15s
+      rules:
+        # Normalize exporter-specific device labels (DCGM gpu / Ascend id).
+        - record: accelerator:utilization_percent
+          expr: |
+            max by (host, accelerator_vendor, accelerator_model, accelerator_id) (
+              label_replace(
+                DCGM_FI_DEV_GPU_UTIL{component="gpu", accelerator_vendor!=""},
+                "accelerator_id", "$1", "gpu", "(.+)"
+              )
+            )
+            or
+            max by (host, accelerator_vendor, accelerator_model, accelerator_id) (
+              label_replace(
+                npu_chip_info_overall_utilization{component="npu", accelerator_vendor!=""},
+                "accelerator_id", "$1", "id", "(.+)"
+              )
+            )
+
+        - record: accelerator:temperature_celsius
+          expr: |
+            max by (host, accelerator_vendor, accelerator_model, accelerator_id) (
+              label_replace(
+                DCGM_FI_DEV_GPU_TEMP{component="gpu", accelerator_vendor!=""},
+                "accelerator_id", "$1", "gpu", "(.+)"
+              )
+            )
+            or
+            max by (host, accelerator_vendor, accelerator_model, accelerator_id) (
+              label_replace(
+                npu_chip_info_temperature{component="npu", accelerator_vendor!=""},
+                "accelerator_id", "$1", "id", "(.+)"
+              )
+            )
+
+        - record: accelerator:power_watts
+          expr: |
+            max by (host, accelerator_vendor, accelerator_model, accelerator_id) (
+              label_replace(
+                DCGM_FI_DEV_POWER_USAGE{component="gpu", accelerator_vendor!=""},
+                "accelerator_id", "$1", "gpu", "(.+)"
+              )
+            )
+            or
+            max by (host, accelerator_vendor, accelerator_model, accelerator_id) (
+              label_replace(
+                npu_chip_info_power{component="npu", accelerator_vendor!=""},
+                "accelerator_id", "$1", "id", "(.+)"
+              )
+            )
+
+        # Both exporters expose framebuffer/HBM values in MiB.
+        - record: accelerator:memory_used_bytes
+          expr: |
+            max by (host, accelerator_vendor, accelerator_model, accelerator_id) (
+              label_replace(
+                DCGM_FI_DEV_FB_USED{component="gpu", accelerator_vendor!=""} * 1048576,
+                "accelerator_id", "$1", "gpu", "(.+)"
+              )
+            )
+            or
+            max by (host, accelerator_vendor, accelerator_model, accelerator_id) (
+              label_replace(
+                npu_chip_info_hbm_used_memory{component="npu", accelerator_vendor!=""} * 1048576,
+                "accelerator_id", "$1", "id", "(.+)"
+              )
+            )
+
+        - record: accelerator:memory_total_bytes
+          expr: |
+            max by (host, accelerator_vendor, accelerator_model, accelerator_id) (
+              label_replace(
+                (
+                  DCGM_FI_DEV_FB_USED{component="gpu", accelerator_vendor!=""}
+                  + DCGM_FI_DEV_FB_FREE{component="gpu", accelerator_vendor!=""}
+                  + DCGM_FI_DEV_FB_RESERVED{component="gpu", accelerator_vendor!=""}
+                ) * 1048576,
+                "accelerator_id", "$1", "gpu", "(.+)"
+              )
+            )
+            or
+            max by (host, accelerator_vendor, accelerator_model, accelerator_id) (
+              label_replace(
+                npu_chip_info_hbm_total_memory{component="npu", accelerator_vendor!=""} * 1048576,
+                "accelerator_id", "$1", "id", "(.+)"
+              )
+            )
+
+        - record: accelerator:memory_utilization_percent
+          expr: |
+            100
+            * accelerator:memory_used_bytes{accelerator_vendor!=""}
+            / accelerator:memory_total_bytes{accelerator_vendor!=""}
+
+        - record: accelerator:device_count
+          expr: |
+            count by (host, accelerator_vendor, accelerator_model) (
+              accelerator:utilization_percent{accelerator_vendor!=""}
+            )
+
+        - record: accelerator:exporter_up
+          expr: |
+            max by (host, accelerator_vendor, accelerator_model) (
+              up{component=~"gpu|npu", accelerator_vendor!=""}
+            )
+
+        - record: accelerator:fleet_utilization_percent:avg
+          expr: avg(accelerator:utilization_percent{accelerator_vendor!=""})
+
+        - record: accelerator:fleet_power_watts:sum
+          expr: sum(accelerator:power_watts{accelerator_vendor!=""})
+
+        - record: accelerator:fleet_memory_used_bytes:sum
+          expr: sum(accelerator:memory_used_bytes{accelerator_vendor!=""})
+
+        - record: accelerator:fleet_memory_total_bytes:sum
+          expr: sum(accelerator:memory_total_bytes{accelerator_vendor!=""})
+
+        - record: accelerator:fleet_memory_utilization_percent
+          expr: |
+            100
+            * accelerator:fleet_memory_used_bytes:sum
+            / accelerator:fleet_memory_total_bytes:sum

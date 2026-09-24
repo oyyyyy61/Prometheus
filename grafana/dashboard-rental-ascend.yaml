@@ -1,0 +1,340 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: grafana-dashboard-rental-ascend
+  namespace: monitoring
+  labels:
+    grafana_dashboard: "1"
+data:
+  rental-ascend-910b2.json: |-
+    {
+      "annotations": {"list": []},
+      "editable": true,
+      "graphTooltip": 1,
+      "links": [],
+      "panels": [
+        {
+          "type": "stat",
+          "title": "Node exporter",
+          "description": "租卡服务器 node_exporter 的采集状态",
+          "gridPos": {"h": 4, "w": 6, "x": 0, "y": 0},
+          "datasource": {"type": "prometheus", "uid": "prometheus"},
+          "targets": [{"refId": "A", "expr": "up{host=\"rental-910b2\",component=\"node\"}", "legendFormat": "node"}],
+          "fieldConfig": {"defaults": {"mappings": [{"type": "value", "options": {"0": {"text": "DOWN", "color": "red"}, "1": {"text": "UP", "color": "green"}}}], "thresholds": {"mode": "absolute", "steps": [{"color": "red", "value": null}, {"color": "green", "value": 1}]}}, "overrides": []},
+          "options": {"reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": false}, "orientation": "auto", "textMode": "auto", "colorMode": "background", "justifyMode": "center"}
+        },
+        {
+          "type": "stat",
+          "title": "NPU exporter",
+          "description": "租卡服务器 NPU Exporter 的采集状态",
+          "gridPos": {"h": 4, "w": 6, "x": 6, "y": 0},
+          "datasource": {"type": "prometheus", "uid": "prometheus"},
+          "targets": [{"refId": "A", "expr": "up{host=\"rental-910b2\",component=\"npu\"}", "legendFormat": "npu"}],
+          "fieldConfig": {"defaults": {"mappings": [{"type": "value", "options": {"0": {"text": "DOWN", "color": "red"}, "1": {"text": "UP", "color": "green"}}}], "thresholds": {"mode": "absolute", "steps": [{"color": "red", "value": null}, {"color": "green", "value": 1}]}}, "overrides": []},
+          "options": {"reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": false}, "orientation": "auto", "textMode": "auto", "colorMode": "background", "justifyMode": "center"}
+        },
+        {
+          "type": "timeseries",
+          "title": "HBM 使用率",
+          "gridPos": {"h": 8, "w": 12, "x": 12, "y": 0},
+          "datasource": {"type": "prometheus", "uid": "prometheus"},
+          "targets": [{"refId": "A", "expr": "npu_chip_info_hbm_utilization{host=\"rental-910b2\",component=\"npu\",id=~\"$npu\"}", "legendFormat": "NPU {{id}}"}],
+          "fieldConfig": {"defaults": {"unit": "percent", "min": 0, "max": 100, "color": {"mode": "palette-classic"}}, "overrides": []},
+          "options": {"legend": {"displayMode": "table", "placement": "bottom"}, "tooltip": {"mode": "multi", "sort": "desc"}}
+        },
+        {
+          "type": "timeseries",
+          "title": "HBM 已用 / 总量 (GiB)",
+          "gridPos": {"h": 8, "w": 12, "x": 0, "y": 4},
+          "datasource": {"type": "prometheus", "uid": "prometheus"},
+          "targets": [
+            {"refId": "A", "expr": "npu_chip_info_hbm_used_memory{host=\"rental-910b2\",component=\"npu\",id=~\"$npu\"} / 1024", "legendFormat": "NPU {{id}} used"},
+            {"refId": "B", "expr": "npu_chip_info_hbm_total_memory{host=\"rental-910b2\",component=\"npu\",id=~\"$npu\"} / 1024", "legendFormat": "NPU {{id}} total"}
+          ],
+          "fieldConfig": {"defaults": {"unit": "none", "decimals": 2}, "overrides": []},
+          "options": {"legend": {"displayMode": "table", "placement": "bottom"}, "tooltip": {"mode": "multi", "sort": "desc"}}
+        },
+        {
+          "type": "timeseries",
+          "title": "NPU 算力利用率（原始值）与推理活动",
+          "description": "算力值来自 NPU exporter；running requests 用于确认当前是否有推理工作，二者含义不同",
+          "gridPos": {"h": 8, "w": 12, "x": 12, "y": 8},
+          "datasource": {"type": "prometheus", "uid": "prometheus"},
+          "targets": [
+            {"refId": "A", "expr": "npu:aicore_utilization_percent{host=\"rental-910b2\",id=~\"$npu\"}", "legendFormat": "NPU AICore"},
+            {"refId": "B", "expr": "npu:inference_requests_running:sum{host=\"rental-910b2\"}", "legendFormat": "running requests"}
+          ],
+          "fieldConfig": {"defaults": {"unit": "percent", "min": 0, "max": 100}, "overrides": [{"matcher": {"id": "byFrameRefID", "options": "B"}, "properties": [{"id": "unit", "value": "short"}]}]},
+          "options": {"legend": {"displayMode": "table", "placement": "bottom"}, "tooltip": {"mode": "multi", "sort": "desc"}}
+        },
+        {
+          "type": "timeseries",
+          "title": "NPU 温度 (°C)",
+          "gridPos": {"h": 8, "w": 12, "x": 0, "y": 12},
+          "datasource": {"type": "prometheus", "uid": "prometheus"},
+          "targets": [{"refId": "A", "expr": "npu_chip_info_temperature{host=\"rental-910b2\",component=\"npu\",id=~\"$npu\"}", "legendFormat": "NPU {{id}}"}],
+          "fieldConfig": {"defaults": {"unit": "celsius"}, "overrides": []},
+          "options": {"legend": {"displayMode": "table", "placement": "bottom"}, "tooltip": {"mode": "multi", "sort": "desc"}}
+        },
+        {
+          "type": "timeseries",
+          "title": "NPU 功耗 (W)",
+          "gridPos": {"h": 8, "w": 12, "x": 12, "y": 16},
+          "datasource": {"type": "prometheus", "uid": "prometheus"},
+          "targets": [{"refId": "A", "expr": "npu_chip_info_power{host=\"rental-910b2\",component=\"npu\",id=~\"$npu\"}", "legendFormat": "NPU {{id}}"}],
+          "fieldConfig": {"defaults": {"unit": "watt"}, "overrides": []},
+          "options": {"legend": {"displayMode": "table", "placement": "bottom"}, "tooltip": {"mode": "multi", "sort": "desc"}}
+        },
+        {
+          "type": "timeseries",
+          "title": "宿主机 CPU 使用率",
+          "gridPos": {"h": 8, "w": 12, "x": 0, "y": 20},
+          "datasource": {"type": "prometheus", "uid": "prometheus"},
+          "targets": [{"refId": "A", "expr": "100 - (avg by (instance) (rate(node_cpu_seconds_total{host=\"rental-910b2\",component=\"node\",mode=\"idle\"}[5m])) * 100)", "legendFormat": "CPU"}],
+          "fieldConfig": {"defaults": {"unit": "percent", "min": 0, "max": 100}, "overrides": []},
+          "options": {"legend": {"displayMode": "list", "placement": "bottom"}, "tooltip": {"mode": "single"}}
+        },
+        {
+          "type": "timeseries",
+          "title": "宿主机可用内存 (GiB)",
+          "gridPos": {"h": 8, "w": 12, "x": 12, "y": 24},
+          "datasource": {"type": "prometheus", "uid": "prometheus"},
+          "targets": [{"refId": "A", "expr": "node_memory_MemAvailable_bytes{host=\"rental-910b2\",component=\"node\"} / 1024^3", "legendFormat": "available"}],
+          "fieldConfig": {"defaults": {"unit": "none", "decimals": 2}, "overrides": []},
+          "options": {"legend": {"displayMode": "list", "placement": "bottom"}, "tooltip": {"mode": "single"}}
+        },
+        {
+          "type": "timeseries",
+          "title": "文件系统使用率",
+          "gridPos": {"h": 8, "w": 12, "x": 0, "y": 28},
+          "datasource": {"type": "prometheus", "uid": "prometheus"},
+          "targets": [{"refId": "A", "expr": "100 * (1 - node_filesystem_avail_bytes{host=\"rental-910b2\",component=\"node\",fstype!~\"tmpfs|overlay\"} / node_filesystem_size_bytes{host=\"rental-910b2\",component=\"node\",fstype!~\"tmpfs|overlay\"})", "legendFormat": "{{mountpoint}}"}],
+          "fieldConfig": {"defaults": {"unit": "percent", "min": 0, "max": 100}, "overrides": []},
+          "options": {"legend": {"displayMode": "table", "placement": "bottom"}, "tooltip": {"mode": "multi", "sort": "desc"}}
+        },
+        {
+          "type": "timeseries",
+          "title": "网络吞吐 (B/s)",
+          "gridPos": {"h": 8, "w": 12, "x": 12, "y": 32},
+          "datasource": {"type": "prometheus", "uid": "prometheus"},
+          "targets": [
+            {"refId": "A", "expr": "sum by (device) (rate(node_network_receive_bytes_total{host=\"rental-910b2\",component=\"node\",device!~\"lo\"}[5m]))", "legendFormat": "{{device}} receive"},
+            {"refId": "B", "expr": "sum by (device) (rate(node_network_transmit_bytes_total{host=\"rental-910b2\",component=\"node\",device!~\"lo\"}[5m]))", "legendFormat": "{{device}} transmit"}
+          ],
+          "fieldConfig": {"defaults": {"unit": "Bps"}, "overrides": []},
+          "options": {"legend": {"displayMode": "table", "placement": "bottom"}, "tooltip": {"mode": "multi", "sort": "desc"}}
+        },
+        {
+          "type": "stat",
+          "title": "HBM 聚合使用率",
+          "description": "按所有 Ascend NPU HBM 总量加权计算的设备使用率",
+          "gridPos": {"h": 4, "w": 6, "x": 0, "y": 40},
+          "datasource": {"type": "prometheus", "uid": "prometheus"},
+          "targets": [{"refId": "A", "expr": "npu:hbm_utilization_percent{host=\"rental-910b2\"}", "legendFormat": "HBM"}],
+          "fieldConfig": {"defaults": {"unit": "percent", "min": 0, "max": 100, "decimals": 1, "thresholds": {"mode": "absolute", "steps": [{"color": "green", "value": null}, {"color": "orange", "value": 85}, {"color": "red", "value": 95}]}}, "overrides": []},
+          "options": {"reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": false}, "orientation": "auto", "textMode": "auto", "colorMode": "background", "justifyMode": "center"}
+        },
+        {
+          "type": "stat",
+          "title": "HBM 剩余容量",
+          "description": "所有 NPU HBM 剩余容量，单位 GiB",
+          "gridPos": {"h": 4, "w": 6, "x": 6, "y": 40},
+          "datasource": {"type": "prometheus", "uid": "prometheus"},
+          "targets": [{"refId": "A", "expr": "npu:hbm_free_memory_mib:sum{host=\"rental-910b2\"} / 1024", "legendFormat": "free"}],
+          "fieldConfig": {"defaults": {"unit": "none", "suffix": " GiB", "decimals": 2, "thresholds": {"mode": "absolute", "steps": [{"color": "red", "value": null}, {"color": "orange", "value": 8}, {"color": "green", "value": 16}]}}, "overrides": []},
+          "options": {"reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": false}, "orientation": "auto", "textMode": "auto", "colorMode": "value", "justifyMode": "center"}
+        },
+        {
+          "type": "stat",
+          "title": "进程占已用 HBM",
+          "description": "进程级 HBM 占设备 HBM 总容量的比例；数据源不同步时显示一致性状态",
+          "gridPos": {"h": 4, "w": 6, "x": 12, "y": 40},
+          "datasource": {"type": "prometheus", "uid": "prometheus"},
+          "targets": [{"refId": "A", "expr": "100 * npu:process_hbm_capacity_ratio{host=\"rental-910b2\"}", "legendFormat": "process / total"}],
+          "fieldConfig": {"defaults": {"unit": "percent", "min": 0, "max": 100, "decimals": 1}, "overrides": []},
+          "options": {"reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": false}, "orientation": "auto", "textMode": "auto", "colorMode": "value", "justifyMode": "center"}
+        },
+        {
+          "type": "stat",
+          "title": "NPU Telemetry",
+          "description": "exporter 在线且 HBM 指标处于新鲜窗口内时为可用",
+          "gridPos": {"h": 4, "w": 6, "x": 18, "y": 40},
+          "datasource": {"type": "prometheus", "uid": "prometheus"},
+          "targets": [{"refId": "A", "expr": "npu:telemetry_usable{host=\"rental-910b2\"}", "legendFormat": "telemetry"}],
+          "fieldConfig": {"defaults": {"mappings": [{"type": "value", "options": {"0": {"text": "STALE / DOWN", "color": "red"}, "1": {"text": "USABLE", "color": "green"}}}], "thresholds": {"mode": "absolute", "steps": [{"color": "red", "value": null}, {"color": "green", "value": 1}]}}, "overrides": []},
+          "options": {"reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": false}, "orientation": "auto", "textMode": "auto", "colorMode": "background", "justifyMode": "center"}
+        },
+        {
+          "type": "timeseries",
+          "title": "HBM 聚合容量 (GiB)",
+          "gridPos": {"h": 8, "w": 12, "x": 0, "y": 44},
+          "datasource": {"type": "prometheus", "uid": "prometheus"},
+          "targets": [
+            {"refId": "A", "expr": "npu:hbm_used_memory_mib:sum{host=\"rental-910b2\"} / 1024", "legendFormat": "used"},
+            {"refId": "B", "expr": "npu:hbm_free_memory_mib:sum{host=\"rental-910b2\"} / 1024", "legendFormat": "free"},
+            {"refId": "C", "expr": "npu:hbm_total_memory_mib:sum{host=\"rental-910b2\"} / 1024", "legendFormat": "total"}
+          ],
+          "fieldConfig": {"defaults": {"unit": "none", "suffix": " GiB", "decimals": 2}, "overrides": []},
+          "options": {"legend": {"displayMode": "table", "placement": "bottom"}, "tooltip": {"mode": "multi", "sort": "desc"}}
+        },
+        {
+          "type": "timeseries",
+          "title": "进程 HBM / 总容量", 
+          "gridPos": {"h": 8, "w": 12, "x": 12, "y": 44},
+          "datasource": {"type": "prometheus", "uid": "prometheus"},
+          "targets": [
+            {"refId": "A", "expr": "100 * npu:process_hbm_capacity_ratio{host=\"rental-910b2\"}", "legendFormat": "process / total"},
+            {"refId": "B", "expr": "100 * npu:process_hbm_data_consistent:bool{host=\"rental-910b2\"}", "legendFormat": "data consistent"}
+          ],
+          "fieldConfig": {"defaults": {"unit": "percent", "min": 0, "max": 100, "decimals": 1}, "overrides": []},
+          "options": {"legend": {"displayMode": "table", "placement": "bottom"}, "tooltip": {"mode": "multi", "sort": "desc"}}
+        },
+        {
+          "type": "timeseries",
+          "title": "HBM 指标新鲜度 (s)",
+          "description": "HBM exporter 最近样本距离当前时间的秒数",
+          "gridPos": {"h": 8, "w": 12, "x": 0, "y": 52},
+          "datasource": {"type": "prometheus", "uid": "prometheus"},
+          "targets": [{"refId": "A", "expr": "npu:hbm_metrics_age_seconds{host=\"rental-910b2\"}", "legendFormat": "sample age"}],
+          "fieldConfig": {"defaults": {"unit": "s", "min": 0, "decimals": 0, "thresholds": {"mode": "absolute", "steps": [{"color": "green", "value": null}, {"color": "orange", "value": 150}, {"color": "red", "value": 180}]}}, "overrides": []},
+          "options": {"legend": {"displayMode": "list", "placement": "bottom"}, "tooltip": {"mode": "single"}}
+        },
+        {
+          "type": "timeseries",
+          "title": "NPU exporter 原始计算 / HBM 带宽指标",
+          "description": "当前 exporter 对这两项返回 0 时，面板保留原始值，不将 HBM 占用伪装成算力利用率",
+          "gridPos": {"h": 8, "w": 12, "x": 12, "y": 52},
+          "datasource": {"type": "prometheus", "uid": "prometheus"},
+          "targets": [
+            {"refId": "A", "expr": "npu:compute_utilization_percent:avg{host=\"rental-910b2\"}", "legendFormat": "compute"},
+            {"refId": "B", "expr": "npu:hbm_bandwidth_utilization_percent:avg{host=\"rental-910b2\"}", "legendFormat": "HBM bandwidth"}
+          ],
+          "fieldConfig": {"defaults": {"unit": "percent", "min": 0, "max": 100, "decimals": 1}, "overrides": []},
+          "options": {"legend": {"displayMode": "table", "placement": "bottom"}, "tooltip": {"mode": "multi", "sort": "desc"}}
+        },
+        {
+          "type": "timeseries",
+          "title": "Agent 数量（生命周期）",
+          "description": "按 Agent state 聚合的运行时 Agent 数量",
+          "gridPos": {"h": 8, "w": 12, "x": 0, "y": 60},
+          "datasource": {"type": "prometheus", "uid": "prometheus"},
+          "targets": [{"refId": "A", "expr": "sum by (state) (agent_lifecycle_agents{runtime=~\"$runtime\",model=~\"$model\",device=~\"$device\"})", "legendFormat": "{{state}}"}],
+          "fieldConfig": {"defaults": {"unit": "short", "min": 0, "decimals": 0}, "overrides": []},
+          "options": {"legend": {"displayMode": "table", "placement": "bottom"}, "tooltip": {"mode": "multi", "sort": "desc"}}
+        },
+        {
+          "type": "timeseries",
+          "title": "Agent 上下文与 Branch",
+          "gridPos": {"h": 8, "w": 12, "x": 12, "y": 60},
+          "datasource": {"type": "prometheus", "uid": "prometheus"},
+          "targets": [
+            {"refId": "A", "expr": "sum by (state, stage) (agent_lifecycle_context_tokens{runtime=~\"$runtime\",model=~\"$model\",device=~\"$device\"})", "legendFormat": "tokens {{state}} / {{stage}}"},
+            {"refId": "B", "expr": "sum by (state, stage) (agent_lifecycle_branch_count{runtime=~\"$runtime\",model=~\"$model\",device=~\"$device\"})", "legendFormat": "branches {{state}} / {{stage}}"}
+          ],
+          "fieldConfig": {"defaults": {"unit": "short", "min": 0, "decimals": 0}, "overrides": []},
+          "options": {"legend": {"displayMode": "table", "placement": "bottom"}, "tooltip": {"mode": "multi", "sort": "desc"}}
+        },
+        {
+          "type": "timeseries",
+          "title": "KV Cache 逻辑 / 物理 / 共享 / 可回收",
+          "gridPos": {"h": 8, "w": 12, "x": 0, "y": 68},
+          "datasource": {"type": "prometheus", "uid": "prometheus"},
+          "targets": [
+            {"refId": "A", "expr": "sum by (view) (agent_memory_bytes{runtime=~\"$runtime\",model=~\"$model\",device=~\"$device\",memory_kind=\"kv_cache\"})", "legendFormat": "{{view}}"}
+          ],
+          "fieldConfig": {"defaults": {"unit": "bytes", "min": 0, "decimals": 2}, "overrides": []},
+          "options": {"legend": {"displayMode": "table", "placement": "bottom"}, "tooltip": {"mode": "multi", "sort": "desc"}}
+        },
+        {
+          "type": "timeseries",
+          "title": "KV 累计命中率与重算速率",
+          "description": "累计命中率在 bridge 重启后仍从 vLLM 源计数器恢复；重算速率只在业务产生重算事件时有值",
+          "gridPos": {"h": 8, "w": 12, "x": 12, "y": 68},
+          "datasource": {"type": "prometheus", "uid": "prometheus"},
+          "targets": [
+            {"refId": "A", "expr": "100 * agent:kv_hit_ratio:cumulative{runtime=~\"$runtime\",model=~\"$model\",device=~\"$device\"}", "legendFormat": "KV cumulative hit ratio"},
+            {"refId": "B", "expr": "rate(agent_kv_recompute_tokens_total{runtime=~\"$runtime\",model=~\"$model\",device=~\"$device\"}[5m])", "legendFormat": "recompute tokens/s"}
+          ],
+          "fieldConfig": {"defaults": {"unit": "short", "min": 0, "decimals": 2}, "overrides": []},
+          "options": {"legend": {"displayMode": "table", "placement": "bottom"}, "tooltip": {"mode": "multi", "sort": "desc"}}
+        },
+        {
+          "type": "timeseries",
+          "title": "KV Offload / Restore 吞吐（无事件时为 0）",
+          "gridPos": {"h": 8, "w": 12, "x": 0, "y": 76},
+          "datasource": {"type": "prometheus", "uid": "prometheus"},
+          "targets": [
+            {"refId": "A", "expr": "rate(agent_memory_offload_bytes_total{runtime=~\"$runtime\",model=~\"$model\",device=~\"$device\"}[5m]) or vector(0)", "legendFormat": "offload {{source_tier}} -> {{target_tier}}"},
+            {"refId": "B", "expr": "rate(agent_memory_restore_bytes_total{runtime=~\"$runtime\",model=~\"$model\",device=~\"$device\"}[5m]) or vector(0)", "legendFormat": "restore {{source_tier}} -> {{target_tier}}"}
+          ],
+          "fieldConfig": {"defaults": {"unit": "Bps", "min": 0, "decimals": 2}, "overrides": []},
+          "options": {"legend": {"displayMode": "table", "placement": "bottom"}, "tooltip": {"mode": "multi", "sort": "desc"}}
+        },
+        {
+          "type": "timeseries",
+          "title": "Agent Tool Wait",
+          "gridPos": {"h": 8, "w": 12, "x": 12, "y": 76},
+          "datasource": {"type": "prometheus", "uid": "prometheus"},
+          "targets": [{"refId": "A", "expr": "sum by (state, stage) (agent_lifecycle_tool_wait_seconds{runtime=~\"$runtime\",model=~\"$model\",device=~\"$device\"})", "legendFormat": "{{state}} / {{stage}}"}],
+          "fieldConfig": {"defaults": {"unit": "s", "min": 0, "decimals": 2}, "overrides": []},
+          "options": {"legend": {"displayMode": "table", "placement": "bottom"}, "tooltip": {"mode": "multi", "sort": "desc"}}
+        }
+      ],
+      "refresh": "5s",
+      "schemaVersion": 39,
+      "tags": ["rental", "ascend", "910b2"],
+      "templating": {"list": [
+        {
+          "name": "npu",
+          "label": "NPU",
+          "type": "query",
+          "datasource": {"type": "prometheus", "uid": "prometheus"},
+          "query": "label_values(npu_chip_info_hbm_utilization{host=\"rental-910b2\"}, id)",
+          "refresh": 1,
+          "includeAll": true,
+          "multi": true,
+          "allValue": ".*",
+          "current": {"text": "All", "value": ["$__all"]}
+        },
+        {
+          "name": "runtime",
+          "label": "Runtime",
+          "type": "query",
+          "datasource": {"type": "prometheus", "uid": "prometheus"},
+          "query": "label_values(agent_lifecycle_agents, runtime)",
+          "refresh": 1,
+          "includeAll": true,
+          "multi": true,
+          "allValue": ".*",
+          "current": {"text": "All", "value": ["$__all"]}
+        },
+        {
+          "name": "model",
+          "label": "Model",
+          "type": "query",
+          "datasource": {"type": "prometheus", "uid": "prometheus"},
+          "query": "label_values(agent_lifecycle_agents{runtime=~\"$runtime\"}, model)",
+          "refresh": 1,
+          "includeAll": true,
+          "multi": true,
+          "allValue": ".*",
+          "current": {"text": "All", "value": ["$__all"]}
+        },
+        {
+          "name": "device",
+          "label": "Agent device",
+          "type": "query",
+          "datasource": {"type": "prometheus", "uid": "prometheus"},
+          "query": "label_values(agent_lifecycle_agents{runtime=~\"$runtime\",model=~\"$model\"}, device)",
+          "refresh": 1,
+          "includeAll": true,
+          "multi": true,
+          "allValue": ".*",
+          "current": {"text": "All", "value": ["$__all"]}
+        }
+      ]},
+      "time": {"from": "now-30m", "to": "now"},
+      "title": "租卡 Ascend 910B2",
+      "uid": "rental-ascend-910b2",
+      "version": 1
+    }

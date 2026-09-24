@@ -9,4 +9,8 @@ resources:
   - controller-deployment.yaml
   - podmonitor.yaml
   - prometheusrule.yaml
+  - accelerator-federation-rules.yaml
   - scrapeconfig-remote-node.yaml
+  - scrapeconfig-rental-node.yaml
+  # Agent-aware NPU recording rules and runtime exporter discovery。
+  - ../npu
