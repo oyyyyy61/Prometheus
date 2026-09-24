@@ -27,6 +27,8 @@ scrape_configs:
     static_configs:
       - targets: ["10.1.125.178:9100"]
         labels:
+          host: "lab-501"
+          component: "node"
           machine: "RTX-4090"
   #监控 4090 本身还需抓取 9400
   - job_name: lab-501-dcgm
@@ -34,4 +36,43 @@ scrape_configs:
     static_configs:
       - targets: ["10.1.125.178:9400"]
         labels:
+          host: "lab-501"
+          component: "gpu"
           machine: "RTX-4090"
+  # 4090 上的实际训练进程；需要由训练程序暴露 /metrics。
+  - job_name: lab-501-training
+    scrape_interval: 5s
+    static_configs:
+      - targets: ["10.1.125.178:8000"]
+        labels:
+          host: "lab-501"
+          component: "training"
+          machine: "RTX-4090"
+  #昇腾910B2
+  - job_name: "rental-node"
+    scrape_interval: 5s
+    static_configs:
+    - targets: ["host.docker.internal:19100"]
+      labels:
+        host: "rental-910b2"
+        component: "node"
+        machine: "Ascend-910B2"
+    - targets: ["host.docker.internal:18082"]
+      labels:
+        host: "rental-910b2"
+        component: "npu"
+        machine: "Ascend-910B2"
+        accelerator_vendor: "Huawei"
+        accelerator_model: "Ascend-910B2"
+    - targets: ["host.docker.internal:18010"]
+      labels:
+        host: "rental-910b2"
+        component: "agent-runtime"
+        machine: "Ascend-910B2"
+        runtime: "vllm-agent-bridge"
+    - targets: ["host.docker.internal:19004"]
+      labels:
+        host: "rental-910b2"
+        component: "recovery-agent"
+        machine: "Ascend-910B2"
+        runtime: "remote-recovery-agent"

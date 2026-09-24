@@ -67,6 +67,56 @@ resume_total_metric = Counter(
     "Number of times training resumed from a checkpoint",
     ["node", "pod"],
 ).labels(**label_values)
+#训练运行状态：1 表示正在执行训练，0 表示已停止或已完成。
+training_active_metric = Gauge(
+    "training_active",
+    "Whether the training loop is actively processing epochs",
+    ["node", "pod"],
+).labels(**label_values)
+#训练是否已经达到目标 epoch。
+training_completed_metric = Gauge(
+    "training_completed",
+    "Whether training has reached the configured target epoch",
+    ["node", "pod"],
+).labels(**label_values)
+#训练目标和批大小用于解释进度与吞吐量。
+training_target_epoch_metric = Gauge(
+    "training_target_epoch",
+    "Configured target training epoch",
+    ["node", "pod"],
+).labels(**label_values)
+training_batch_size_metric = Gauge(
+    "training_batch_size",
+    "Number of samples processed in the latest batch",
+    ["node", "pod"],
+).labels(**label_values)
+#Counter 适合用 rate() 计算长期训练吞吐。
+training_samples_total_metric = Counter(
+    "training_samples_total",
+    "Total number of samples processed by the training loop",
+    ["node", "pod"],
+).labels(**label_values)
+training_samples_per_second_metric = Gauge(
+    "training_samples_per_second",
+    "Samples processed per second during the latest training step",
+    ["node", "pod"],
+).labels(**label_values)
+training_data_loading_wait_metric = Gauge(
+    "training_data_loading_wait_seconds",
+    "Time spent waiting for the latest training batch",
+    ["node", "pod"],
+).labels(**label_values)
+training_step_duration_metric = Gauge(
+    "training_step_duration_seconds",
+    "Duration of the latest forward/backward/optimizer step",
+    ["node", "pod"],
+).labels(**label_values)
+#Checkpoint 成功存在时为 1；启动时没有可用快照则为 0。
+checkpoint_status_metric = Gauge(
+    "training_checkpoint_status",
+    "Whether a valid checkpoint is currently available",
+    ["node", "pod"],
+).labels(**label_values)
 
 start_http_server(8000)
 
@@ -82,6 +132,10 @@ loss_function = nn.MSELoss()
 
 start_epoch = 1
 total_epochs = 3000
+training_target_epoch_metric.set(total_epochs)
+training_active_metric.set(1)
+training_completed_metric.set(0)
+checkpoint_status_metric.set(0)
 
 if checkpoint_path.exists():
     print("发现 Checkpoint，准备恢复训练")
@@ -106,6 +160,7 @@ if checkpoint_path.exists():
     #这样即使进程刚恢复还没完成第一轮保存，"快照停滞"告警的时间基准也是准确的
     checkpoint_save_timestamp_metric.set(checkpoint_path.stat().st_mtime)
     checkpoint_file_size_metric.set(checkpoint_path.stat().st_size)
+    checkpoint_status_metric.set(1)
 
     print("Checkpoint 加载完成")
 else:
@@ -131,13 +186,26 @@ signal.signal(signal.SIGTERM, request_stop)
 
 try:
     for epoch in range(start_epoch, total_epochs + 1):
+        #当前示例数据已经在内存中；保留这段计时边界，替换成 DataLoader 后
+        #会自然反映真实的数据读取、预处理或队列等待时间。
+        batch_load_start = time.perf_counter()
+        batch_x, batch_y = x, y
+        data_loading_wait = time.perf_counter() - batch_load_start
+        training_data_loading_wait_metric.set(data_loading_wait)
+        training_batch_size_metric.set(batch_x.shape[0])
+
+        step_start = time.perf_counter()
         optimizer.zero_grad()
 
-        predictions = model(x)
-        loss = loss_function(predictions, y)
+        predictions = model(batch_x)
+        loss = loss_function(predictions, batch_y)
 
         loss.backward()
         optimizer.step()
+        step_duration = time.perf_counter() - step_start
+        training_step_duration_metric.set(step_duration)
+        training_samples_total_metric.inc(batch_x.shape[0])
+        training_samples_per_second_metric.set(batch_x.shape[0] / max(step_duration, 1e-9))
 
         checkpoint_to_save = {
             "next_epoch": epoch + 1,
@@ -161,6 +229,7 @@ try:
         checkpoint_save_timestamp_metric.set(time.time())
         checkpoint_save_duration_metric.set(save_duration)
         checkpoint_file_size_metric.set(checkpoint_path.stat().st_size)
+        checkpoint_status_metric.set(1)
 
         if stop_requested:
             print("当前轮 Checkpoint 已保存，训练安全停止")
@@ -178,6 +247,8 @@ try:
 except KeyboardInterrupt:
     print("\n训练被手动暂停")
     print("下次启动将读取最近一次成功保存的 Checkpoint")
+finally:
+    training_active_metric.set(0)
 
 # Deployment 的 restartPolicy 固定为 Always。
 # 训练完成后保持进程存活，避免 kubelet 反复重启一个已完成的任务。
@@ -188,6 +259,7 @@ if checkpoint_path.exists() and not stop_requested:
         weights_only=True,
     )
     if int(final_checkpoint["next_epoch"]) > total_epochs:
+        training_completed_metric.set(1)
         print("训练已完成，保持 Pod 运行以维持 Deployment 副本", flush=True)
         while not stop_requested:
             time.sleep(30)
