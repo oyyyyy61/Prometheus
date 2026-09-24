@@ -1,0 +1,4 @@
+# Install as /etc/sudoers.d/agentrix-recovery and validate with visudo.
+# Replace unit names only when the corresponding service names change.
+agentrix-recovery ALL=(root) NOPASSWD: /usr/bin/systemctl restart agentrix-vllm-bridge.service
+agentrix-recovery ALL=(root) NOPASSWD: /usr/bin/systemctl restart vllm.service

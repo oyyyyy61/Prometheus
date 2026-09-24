@@ -12,3 +12,177 @@ groups:
         annotations:
           summary: "Training metrics endpoint is down"
           description: "Prometheus cannot scrape the training process on port 8000 for 15 seconds"
+      - alert: TrainingCheckpointStale
+        expr: |
+          time() - training_checkpoint_save_timestamp_seconds > 30
+          and on(node, pod) training_active == 1
+        for: 30s
+        labels:
+          severity: warning
+        annotations:
+          summary: "Training checkpoint has not advanced"
+          description: "The training process is active but its checkpoint timestamp has not changed for 30 seconds"
+      - alert: TrainingLoopStalled
+        expr: |
+          training_active == 1
+          and on(node, pod) changes(training_current_epoch[5m]) == 0
+        for: 2m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Training progress is stalled"
+          description: "The exporter is up but no new epoch has completed for five minutes"
+      - alert: TrainingDataLoadingSlow
+        expr: training_active == 1 and training_data_loading_wait_seconds > 1
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Training data loading is slow"
+          description: "The latest training batches have waited more than one second for data"
+      - alert: TrainingCheckpointSaveSlow
+        expr: training_active == 1 and training_checkpoint_save_duration_seconds > 30
+        for: 2m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Checkpoint save is slow"
+          description: "Checkpoint writes have taken more than 30 seconds"
+
+  - name: lab-501-gpu-and-node
+    rules:
+      - alert: Lab501GPUExporterDown
+        expr: up{job="lab-501-dcgm", machine="RTX-4090"} == 0
+        for: 1m
+        labels:
+          severity: critical
+          host: lab-501
+        annotations:
+          summary: "lab-501 GPU exporter is down"
+          description: "Prometheus cannot scrape DCGM on 10.1.125.178:9400"
+      - alert: Lab501NodeExporterDown
+        expr: up{job="lab-501-node", machine="RTX-4090"} == 0
+        for: 1m
+        labels:
+          severity: critical
+          host: lab-501
+        annotations:
+          summary: "lab-501 node exporter is down"
+          description: "Prometheus cannot scrape node metrics on 10.1.125.178:9100"
+      - alert: Lab501GPUHighTemperature
+        expr: DCGM_FI_DEV_GPU_TEMP{job="lab-501-dcgm", machine="RTX-4090"} > 85
+        for: 5m
+        labels:
+          severity: warning
+          host: lab-501
+        annotations:
+          summary: "lab-501 RTX 4090 temperature is high"
+          description: "GPU temperature has stayed above 85°C for five minutes"
+      - alert: Lab501GPUMemoryAlmostFull
+        expr: |
+          100 * DCGM_FI_DEV_FB_USED{job="lab-501-dcgm", machine="RTX-4090"}
+          /
+          (
+            DCGM_FI_DEV_FB_USED{job="lab-501-dcgm", machine="RTX-4090"}
+            + DCGM_FI_DEV_FB_FREE{job="lab-501-dcgm", machine="RTX-4090"}
+            + DCGM_FI_DEV_FB_RESERVED{job="lab-501-dcgm", machine="RTX-4090"}
+          ) > 95
+        for: 2m
+        labels:
+          severity: warning
+          host: lab-501
+        annotations:
+          summary: "lab-501 RTX 4090 memory is almost full"
+          description: "GPU framebuffer usage has stayed above 95 percent"
+      - alert: Lab501GPUPowerHigh
+        expr: DCGM_FI_DEV_POWER_USAGE{job="lab-501-dcgm", machine="RTX-4090"} > 430
+        for: 5m
+        labels:
+          severity: warning
+          host: lab-501
+        annotations:
+          summary: "lab-501 RTX 4090 power is high"
+          description: "GPU power usage has stayed above 430 watts"
+      - alert: Lab501NodeDiskAlmostFull
+        expr: |
+          100 * (1 - node_filesystem_avail_bytes{job="lab-501-node", machine="RTX-4090", fstype!~"tmpfs|overlay"}
+          / node_filesystem_size_bytes{job="lab-501-node", machine="RTX-4090", fstype!~"tmpfs|overlay"}) > 90
+        for: 10m
+        labels:
+          severity: warning
+          host: lab-501
+        annotations:
+          summary: "lab-501 disk is almost full"
+          description: "A filesystem has stayed above 90 percent usage"
+
+  - name: rental-ascend-recovery
+    rules:
+      - alert: RentalAscendNPUExporterDown
+        expr: up{job="rental-node", host="rental-910b2", component="npu"} == 0
+        for: 1m
+        labels:
+          severity: critical
+          host: rental-910b2
+        annotations:
+          summary: "Remote Ascend NPU exporter is unavailable"
+          description: "NPU telemetry is unavailable; recovery decisions should wait for fresh metrics"
+      - alert: RentalAscendNPUHighTemperature
+        expr: npu_chip_info_temperature{host="rental-910b2", component="npu"} > 85
+        for: 5m
+        labels:
+          severity: warning
+          host: rental-910b2
+        annotations:
+          summary: "Remote Ascend NPU temperature is high"
+          description: "An Ascend NPU temperature has stayed above 85 degrees Celsius"
+      - alert: RentalAscendHBMAlmostFull
+        expr: 100 * npu_chip_info_hbm_used_memory{host="rental-910b2", component="npu"} / clamp_min(npu_chip_info_hbm_total_memory{host="rental-910b2", component="npu"}, 1) > 95
+        for: 2m
+        labels:
+          severity: warning
+          host: rental-910b2
+        annotations:
+          summary: "Remote Ascend HBM is almost full"
+          description: "NPU HBM usage has stayed above 95 percent"
+      - alert: RentalAscendRecoveryAgentDown
+        expr: up{job="rental-node", host="rental-910b2", component="recovery-agent"} == 0
+        for: 1m
+        labels:
+          severity: critical
+          host: rental-910b2
+        annotations:
+          summary: "Remote Ascend recovery agent is unavailable"
+          description: "The recovery control endpoint or its metrics tunnel cannot be reached"
+      - alert: RentalAscendBridgeDown
+        expr: up{job="rental-node", host="rental-910b2", component="agent-runtime"} == 0
+        for: 1m
+        labels:
+          severity: critical
+          host: rental-910b2
+          recovery_action: restart_bridge
+        annotations:
+          summary: "Remote Ascend Agent bridge is down"
+          description: "Restart the allowlisted bridge systemd unit through the remote recovery agent"
+      - alert: RentalAscendInferenceStalled
+        expr: |
+          sum by (host, machine) (agent_runtime_requests_waiting{host="rental-910b2", component="agent-runtime"}) > 0
+          and on (host, machine)
+          sum by (host, machine) (agent_runtime_requests_running{host="rental-910b2", component="agent-runtime"}) == 0
+        for: 5m
+        labels:
+          severity: warning
+          host: rental-910b2
+          recovery_action: restart_vllm
+        annotations:
+          summary: "Remote Ascend inference queue is stalled"
+          description: "Requests are waiting while vLLM has no running requests for five minutes"
+      - alert: RentalAscendCheckpointTargetMissing
+        expr: recovery_agent_checkpoint_available{job="rental-node", host="rental-910b2", component="recovery-agent"} == 1 and recovery_agent_checkpoint_target_available{job="rental-node", host="rental-910b2", component="recovery-agent"} == 0
+        for: 1m
+        labels:
+          severity: critical
+          host: rental-910b2
+          recovery_action: restore_checkpoint
+        annotations:
+          summary: "Remote Ascend active checkpoint is missing"
+          description: "Restore the configured checkpoint source to the active checkpoint target"

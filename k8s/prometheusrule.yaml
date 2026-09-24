@@ -17,12 +17,41 @@ spec:
         #watch Pod 的控制器也发现不了，只有指标时间戳能暴露它。
         #这正是告警链路与 K8s watch 控制器互补的地方。
         - alert: TrainingCheckpointStale
-          expr: time() - training_checkpoint_save_timestamp_seconds > 30
+          expr: |
+            time() - training_checkpoint_save_timestamp_seconds > 30
+            and on(node, pod) training_active == 1
+          for: 30s
           labels:
             severity: warning
           annotations:
             summary: "训练快照超过 30 秒未更新"
             description: "训练进程可能仍在运行，但 Checkpoint 已停止保存，此时发生故障将丢失大量进度"
+        - alert: TrainingLoopStalled
+          expr: |
+            training_active == 1
+            and on(node, pod) changes(training_current_epoch[5m]) == 0
+          for: 2m
+          labels:
+            severity: warning
+          annotations:
+            summary: "训练进度超过 5 分钟未变化"
+            description: "训练 exporter 仍在线，但 epoch 没有推进，请检查 GPU、数据加载和存储"
+        - alert: TrainingDataLoadingSlow
+          expr: training_active == 1 and training_data_loading_wait_seconds > 1
+          for: 5m
+          labels:
+            severity: warning
+          annotations:
+            summary: "训练数据加载等待过长"
+            description: "最近批次的数据等待超过 1 秒，可能存在磁盘、网络存储或 CPU 预处理瓶颈"
+        - alert: TrainingCheckpointSaveSlow
+          expr: training_active == 1 and training_checkpoint_save_duration_seconds > 30
+          for: 2m
+          labels:
+            severity: warning
+          annotations:
+            summary: "Checkpoint 保存耗时过长"
+            description: "最近 Checkpoint 保存超过 30 秒，训练吞吐和故障恢复窗口都会受到影响"
         #Pod 长时间不可用告警。
         #正常情况下自定义控制器会在秒级完成恢复，如果超过 1 分钟还没有可用副本，
         #说明自动恢复链路本身可能出了问题，需要人工介入
@@ -34,3 +63,139 @@ spec:
           annotations:
             summary: "training-demo 没有可用的 Pod"
             description: "Deployment 超过 1 分钟没有可用副本，自动恢复可能已失败"
+    - name: lab-501-gpu-and-node
+      rules:
+        - alert: Lab501GPUExporterDown
+          expr: up{host="lab-501", component="gpu"} == 0
+          for: 1m
+          labels:
+            severity: critical
+            host: lab-501
+          annotations:
+            summary: "lab-501 的 4090 GPU exporter 不可用"
+            description: "无法从 10.1.125.178:9400 读取 DCGM 指标，GPU 状态监控已经中断"
+        - alert: Lab501NodeExporterDown
+          expr: up{host="lab-501", component="node"} == 0
+          for: 1m
+          labels:
+            severity: critical
+            host: lab-501
+          annotations:
+            summary: "lab-501 主机 exporter 不可用"
+            description: "无法从 10.1.125.178:9100 读取 CPU、内存、磁盘和网络指标"
+        - alert: Lab501GPUHighTemperature
+          expr: DCGM_FI_DEV_GPU_TEMP{host="lab-501", component="gpu"} > 85
+          for: 5m
+          labels:
+            severity: warning
+            host: lab-501
+          annotations:
+            summary: "lab-501 4090 温度过高"
+            description: "GPU 温度持续高于 85°C，请检查散热、风扇和机箱风道"
+        - alert: Lab501GPUMemoryAlmostFull
+          expr: |
+            100 * DCGM_FI_DEV_FB_USED{host="lab-501", component="gpu"}
+            /
+            (
+              DCGM_FI_DEV_FB_USED{host="lab-501", component="gpu"}
+              + DCGM_FI_DEV_FB_FREE{host="lab-501", component="gpu"}
+              + DCGM_FI_DEV_FB_RESERVED{host="lab-501", component="gpu"}
+            ) > 95
+          for: 2m
+          labels:
+            severity: warning
+            host: lab-501
+          annotations:
+            summary: "lab-501 4090 显存接近耗尽"
+            description: "GPU 显存使用率持续高于 95%，可能触发 OOM 或频繁重新计算"
+        - alert: Lab501GPUPowerHigh
+          expr: DCGM_FI_DEV_POWER_USAGE{host="lab-501", component="gpu"} > 430
+          for: 5m
+          labels:
+            severity: warning
+            host: lab-501
+          annotations:
+            summary: "lab-501 4090 功耗过高"
+            description: "GPU 功耗持续高于 430W，请检查功耗限制、电源和散热"
+        - alert: Lab501NodeDiskAlmostFull
+          expr: |
+            100 * (1 - node_filesystem_avail_bytes{host="lab-501", component="node", fstype!~"tmpfs|overlay"}
+            / node_filesystem_size_bytes{host="lab-501", component="node", fstype!~"tmpfs|overlay"}) > 90
+          for: 10m
+          labels:
+            severity: warning
+            host: lab-501
+          annotations:
+            summary: "lab-501 磁盘空间不足"
+            description: "文件系统使用率持续高于 90%，Checkpoint 或容器日志可能无法继续写入"
+    - name: rental-ascend-recovery
+      rules:
+        - alert: RentalAscendNPUExporterDown
+          expr: up{host="rental-910b2", component="npu"} == 0
+          for: 1m
+          labels:
+            severity: critical
+            host: rental-910b2
+          annotations:
+            summary: "远端 Ascend NPU exporter 不可用"
+            description: "NPU 遥测不可用，恢复决策应等待指标恢复"
+        - alert: RentalAscendNPUHighTemperature
+          expr: npu_chip_info_temperature{host="rental-910b2", component="npu"} > 85
+          for: 5m
+          labels:
+            severity: warning
+            host: rental-910b2
+          annotations:
+            summary: "远端 Ascend NPU 温度过高"
+            description: "Ascend NPU 温度持续高于 85 摄氏度"
+        - alert: RentalAscendHBMAlmostFull
+          expr: 100 * npu_chip_info_hbm_used_memory{host="rental-910b2", component="npu"} / clamp_min(npu_chip_info_hbm_total_memory{host="rental-910b2", component="npu"}, 1) > 95
+          for: 2m
+          labels:
+            severity: warning
+            host: rental-910b2
+          annotations:
+            summary: "远端 Ascend HBM 接近耗尽"
+            description: "NPU HBM 使用率持续高于 95%"
+        - alert: RentalAscendRecoveryAgentDown
+          expr: up{host="rental-910b2", component="recovery-agent"} == 0
+          for: 1m
+          labels:
+            severity: critical
+            host: rental-910b2
+          annotations:
+            summary: "远端 Ascend recovery agent 不可用"
+            description: "恢复控制端点或其指标隧道无法访问"
+        - alert: RentalAscendBridgeDown
+          expr: up{host="rental-910b2", component="agent-runtime"} == 0
+          for: 1m
+          labels:
+            severity: critical
+            host: rental-910b2
+            recovery_action: restart_bridge
+          annotations:
+            summary: "远端 Ascend Agent bridge 不可用"
+            description: "通过受限 recovery agent 重启 bridge systemd unit"
+        - alert: RentalAscendInferenceStalled
+          expr: |
+            sum by (host, machine) (agent_runtime_requests_waiting{host="rental-910b2", component="agent-runtime"}) > 0
+            and on (host, machine)
+            sum by (host, machine) (agent_runtime_requests_running{host="rental-910b2", component="agent-runtime"}) == 0
+          for: 5m
+          labels:
+            severity: warning
+            host: rental-910b2
+            recovery_action: restart_vllm
+          annotations:
+            summary: "远端 Ascend 推理队列停滞"
+            description: "请求持续排队且 vLLM 五分钟没有运行中的请求"
+        - alert: RentalAscendCheckpointTargetMissing
+          expr: recovery_agent_checkpoint_available{host="rental-910b2", component="recovery-agent"} == 1 and recovery_agent_checkpoint_target_available{host="rental-910b2", component="recovery-agent"} == 0
+          for: 1m
+          labels:
+            severity: critical
+            host: rental-910b2
+            recovery_action: restore_checkpoint
+          annotations:
+            summary: "远端 Ascend active checkpoint 缺失"
+            description: "将配置的 checkpoint 源原子恢复到 active checkpoint 目标路径"

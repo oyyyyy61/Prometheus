@@ -1,0 +1,22 @@
+[Unit]
+Description=Restricted remote Ascend recovery agent
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=agentrix-recovery
+Group=agentrix-recovery
+WorkingDirectory=/data/Agentrix/observability
+EnvironmentFile=/etc/agentrix/recovery-agent.env
+ExecStart=/data/Agentrix/.venv/bin/python /data/Agentrix/observability/remote_agent.py --address 127.0.0.1 --port 8004 --metrics-port 9004
+Restart=on-failure
+RestartSec=5s
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/data/Agentrix/checkpoints
+
+[Install]
+WantedBy=multi-user.target
